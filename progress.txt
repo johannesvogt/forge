@@ -1,0 +1,16 @@
+2026-06-18 — Issue 1: Project Scaffold
+
+Initialized Next.js 16 App Router monorepo (TypeScript, Tailwind CSS v3, Prisma 7, PostgreSQL).
+
+Deliverables:
+- app/ layout shell with nav (Board, Documents, Diffs, Skills, Context placeholder pages)
+- /api/health route returning { status: "ok" }
+- prisma/schema.prisma + prisma.config.ts wired to local PostgreSQL
+- lib/api/health.ts + lib/api/health.test.ts (TDD, node:test runner)
+- 2/2 unit tests passing; tsc --noEmit clean; npm run build succeeds
+
+Environment notes (ARM64 sandbox):
+- Uses node:test + --experimental-strip-types instead of Vitest (esbuild SIGILL)
+- Uses next build --webpack + WASM SWC instead of Turbopack (native SWC SIGFAULT)
+- Uses Tailwind CSS v3 instead of v4 (@tailwindcss/oxide SIGFAULT)
+- node_modules/@next/swc-wasm-nodejs installed manually from tarball

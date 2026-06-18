@@ -161,6 +161,18 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 **Auth / Identity** — integration tested. Verify: signup creates user; login returns session token; invalid password rejected; API key generation and revocation; agent requests with valid/invalid keys.
 
+## Implementation Log
+
+### Issue 1 — Project Scaffold (completed 2026-06-18)
+
+Initialized the Next.js 16 App Router monorepo with TypeScript, Prisma 7, Tailwind CSS 3, and PostgreSQL. Key decisions made during implementation:
+
+- **Test runner**: Node.js built-in `node:test` with `--experimental-strip-types` (Node 22) instead of Vitest. esbuild native binaries SIGILL/SIGFAULT on the ARM64 sandbox CPU; the built-in runner requires no compilation toolchain.
+- **Build mode**: `next build --webpack` with WASM SWC (`@next/swc-wasm-nodejs`). Native SWC and Turbopack crash on this ARM64 variant; WASM fallback works with webpack bundler. Set `NEXT_TEST_WASM_DIR` in `.env.local` to point at the pre-installed WASM package.
+- **CSS**: Tailwind CSS v3 (pure JS PostCSS) instead of v4. Tailwind v4's `@tailwindcss/oxide` (Rust native) also segfaults on this CPU.
+- **Prisma 7**: Requires `prisma.config.ts` for datasource URL — `url` is no longer accepted in `schema.prisma`.
+- **TDD**: `lib/api/health.ts` extracted as a pure function testable without Next.js bindings; `lib/api/health.test.ts` uses `node:test` + `assert`.
+
 ## Out of Scope
 
 - Granular reviewer assignment (specific person or role per document/issue) — v2
