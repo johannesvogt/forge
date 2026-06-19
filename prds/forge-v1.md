@@ -163,6 +163,18 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 5 — Document Store: Create and Read (completed 2026-06-19)
+
+First-class Document entities with versioned storage, issue linking, and a read-back UI.
+
+- **Prisma schema**: `Document` (id, title, createdAt, updatedAt), `DocumentVersion` (id, documentId, versionNumber, content, authorUserId, authorLabel, createdAt; unique on [documentId, versionNumber]), `DocumentIssueLink` (compound PK [documentId, issueId]; cascade deletes). Schema pushed via `prisma db push`.
+- **Document service**: `lib/documents/document-service.ts` — `createDocument` (creates Document + version 1 + issue link), `getDocument` (fetches doc with latest version content), `listDocumentsByIssue` (follows DocumentIssueLink join), `linkDocumentToIssue` (idempotent upsert via `ON CONFLICT DO NOTHING`). Db interface pattern matches prior slices for testability.
+- **TDD tests**: `lib/documents/document-service.test.ts` — 11 integration tests against real PostgreSQL covering: create with version 1, author recorded, link visible in list, full field fetch, null for missing id, empty list, cross-issue isolation, fields on list items, multi-issue linking, idempotent link.
+- **API routes**: `POST /api/documents` (dual auth: human session or agent Bearer; validates title/content/issueId; returns 201); `GET /api/documents/[id]` (human session required; 404 on missing); `GET /api/issues/[id]/documents` (lists docs for an issue; 404 if issue missing).
+- **Issue detail UI** (`app/board/[id]/page.tsx`): Documents section above comments; fetches linked docs on load; "+ New Document" inline form with title + content textarea; optimistic append on create; each doc links to viewer.
+- **Document viewer** (`app/documents/[id]/page.tsx`): fetches doc via API; shows title, version badge, last-updated timestamp, content rendered as preformatted monospace text.
+- **Test count**: 109/109 pass; `tsc --noEmit` clean.
+
 ### Issue 4 — Issue Comments (completed 2026-06-19)
 
 Threaded comment system on issues. Establishes the shared polymorphic Comment data model reused by document and diff comments in later slices.

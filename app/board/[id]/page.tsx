@@ -46,6 +46,14 @@ interface Comment {
   createdAt: string;
 }
 
+interface LinkedDocument {
+  id: string;
+  title: string;
+  versionNumber: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -61,6 +69,13 @@ export default function IssueDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [documents, setDocuments] = useState<LinkedDocument[]>([]);
+  const [showDocForm, setShowDocForm] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+  const [docContent, setDocContent] = useState('');
+  const [docSubmitting, setDocSubmitting] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
 
   const fetchIssue = useCallback(async () => {
     try {
@@ -85,10 +100,21 @@ export default function IssueDetailPage() {
     }
   }, [id]);
 
+  const fetchDocuments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/issues/${id}/documents`);
+      if (!res.ok) return;
+      setDocuments(await res.json());
+    } catch {
+      // non-critical — documents fail silently
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchIssue();
     fetchComments();
-  }, [fetchIssue, fetchComments]);
+    fetchDocuments();
+  }, [fetchIssue, fetchComments, fetchDocuments]);
 
   async function handleMove(target: ColumnId) {
     if (!issue) return;
@@ -109,6 +135,33 @@ export default function IssueDetailPage() {
       setMoveError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setMoving(null);
+    }
+  }
+
+  async function handleAddDocument(e: React.FormEvent) {
+    e.preventDefault();
+    if (!docTitle.trim()) return;
+    setDocSubmitting(true);
+    setDocError(null);
+    try {
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: docTitle.trim(), content: docContent, issueId: id }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Failed to create document');
+      }
+      const newDoc: LinkedDocument = await res.json();
+      setDocuments((prev) => [...prev, newDoc]);
+      setDocTitle('');
+      setDocContent('');
+      setShowDocForm(false);
+    } catch (e) {
+      setDocError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setDocSubmitting(false);
     }
   }
 
@@ -203,6 +256,75 @@ export default function IssueDetailPage() {
           Created {new Date(issue.createdAt).toLocaleString()} ·{' '}
           Updated {new Date(issue.updatedAt).toLocaleString()}
         </div>
+      </div>
+
+      {/* Documents section */}
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Documents {documents.length > 0 && <span className="text-gray-400">({documents.length})</span>}
+          </h2>
+          <button
+            onClick={() => setShowDocForm((v) => !v)}
+            className="text-xs text-indigo-600 hover:underline"
+          >
+            {showDocForm ? 'Cancel' : '+ New Document'}
+          </button>
+        </div>
+
+        {documents.length === 0 && !showDocForm && (
+          <p className="text-sm text-gray-400 italic">No documents yet.</p>
+        )}
+
+        {documents.length > 0 && (
+          <div className="space-y-2">
+            {documents.map((doc) => (
+              <Link
+                key={doc.id}
+                href={`/documents/${doc.id}`}
+                className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-indigo-300 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-gray-800">{doc.title}</span>
+                  <span className="flex-shrink-0 text-xs text-gray-400">v{doc.versionNumber}</span>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {new Date(doc.updatedAt).toLocaleString()}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {showDocForm && (
+          <form onSubmit={handleAddDocument} className="mt-3 space-y-2">
+            <input
+              type="text"
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
+              placeholder="Document title…"
+              required
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <textarea
+              value={docContent}
+              onChange={(e) => setDocContent(e.target.value)}
+              placeholder="Content (markdown supported)…"
+              rows={6}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            {docError && <p className="text-xs text-red-600">{docError}</p>}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={docSubmitting || !docTitle.trim()}
+                className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {docSubmitting ? 'Creating…' : 'Create Document'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Comment thread */}

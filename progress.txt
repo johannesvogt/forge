@@ -1,3 +1,18 @@
+2026-06-19 — Issue 5: Document Store (Create and Read)
+
+First-class Document entities with append-only versioning foundation, issue linking, and a read-back UI.
+
+Deliverables:
+- prisma/schema.prisma — Document model, DocumentVersion model (unique [documentId, versionNumber]), DocumentIssueLink model (compound PK, cascade)
+- lib/documents/document-service.ts — createDocument, getDocument, listDocumentsByIssue, linkDocumentToIssue; Db interface for testability
+- lib/documents/document-service.test.ts — 11 TDD integration tests against real PG (create with v1, author, link visible, full fields, null on missing, empty list, cross-issue isolation, multi-issue link, idempotent link)
+- app/api/documents/route.ts — POST create (dual auth: human session or agent Bearer; 400/401 validation)
+- app/api/documents/[id]/route.ts — GET detail (human session; 404 on missing)
+- app/api/issues/[id]/documents/route.ts — GET list docs by issue (human session; 404 if issue missing)
+- app/board/[id]/page.tsx — Documents section on issue detail: lists linked docs, inline create form, optimistic append, link to viewer
+- app/documents/[id]/page.tsx — Document viewer: title, version badge, timestamp, preformatted content
+- 109/109 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 4: Issue Comments
 
 Threaded comment system on issues, establishing the shared polymorphic Comment data model for future document and diff comment slices.

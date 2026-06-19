@@ -45,3 +45,34 @@ model Comment {
   status       String   @default("open")
   createdAt    DateTime @default(now())
 }
+
+model Document {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions   DocumentVersion[]
+  issueLinks DocumentIssueLink[]
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  content       String
+  authorUserId  String?
+  authorLabel   String
+  createdAt     DateTime @default(now())
+
+  @@unique([documentId, versionNumber])
+}
+
+model DocumentIssueLink {
+  documentId String
+  issueId    String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, issueId])
+}
