@@ -39,12 +39,12 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
       },
     },
     apiKey: {
-      create: async ({ data }: { data: { userId: string; label: string; keyHash: string; last4: string } }) => {
+      create: async ({ data }: { data: { userId: string; label: string; keyHash: string; last4: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "ApiKey" (id, label, "keyHash", last4, "createdAt", "userId") VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [id, data.label, data.keyHash, data.last4, now, data.userId]
+          `INSERT INTO "ApiKey" (id, label, "keyHash", last4, "createdAt", "userId", "projectId") VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [id, data.label, data.keyHash, data.last4, now, data.userId, data.projectId]
         );
         return r.rows[0];
       },
@@ -74,31 +74,49 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
 type DbClient = ReturnType<typeof makePgClient>;
 let db: DbClient;
 let testUserId: string;
+let testProjectId: string;
+let testProjectBId: string;
 
 before(async () => {
   db = makePgClient(pool);
   const user = await createUser(db as any, `test-apikey-${Date.now()}@example.com`, 'password123');
   testUserId = user.id;
+
+  const ts = Date.now();
+  const projA = await pool.query(
+    `INSERT INTO "Project" (id, name, slug, "createdByUserId", "createdAt", "updatedAt")
+     VALUES ($1,$2,$3,$4,now(),now()) RETURNING id`,
+    [crypto.randomUUID(), 'Test Project A', `test-apikey-proj-a-${ts}`, testUserId]
+  );
+  testProjectId = projA.rows[0].id;
+
+  const projB = await pool.query(
+    `INSERT INTO "Project" (id, name, slug, "createdByUserId", "createdAt", "updatedAt")
+     VALUES ($1,$2,$3,$4,now(),now()) RETURNING id`,
+    [crypto.randomUUID(), 'Test Project B', `test-apikey-proj-b-${ts}`, testUserId]
+  );
+  testProjectBId = projB.rows[0].id;
 });
 
 after(async () => {
-  await db.apiKey.deleteMany({ where: { userId: testUserId } });
+  await pool.query(`DELETE FROM "Project" WHERE "createdByUserId" = $1`, [testUserId]);
   await pool.query(`DELETE FROM "User" WHERE email LIKE 'test-apikey-%'`);
   await pool.end();
 });
 
 describe('createApiKey', () => {
   it('returns a raw key starting with frg_', async () => {
-    const { rawKey } = await createApiKey(db as any, testUserId, 'my-agent');
+    const { rawKey } = await createApiKey(db as any, testUserId, 'my-agent', testProjectId);
     assert.ok(rawKey.startsWith('frg_'));
   });
 
-  it('persists a record with hashed key and last4', async () => {
-    const { rawKey, record } = await createApiKey(db as any, testUserId, 'test-label');
+  it('persists a record with hashed key, last4, and projectId', async () => {
+    const { rawKey, record } = await createApiKey(db as any, testUserId, 'test-label', testProjectId);
     assert.equal(record.label, 'test-label');
     assert.equal(record.last4, rawKey.slice(-4));
     assert.ok(record.keyHash.length === 64); // SHA-256 hex
     assert.equal(record.revokedAt, null);
+    assert.equal(record.projectId, testProjectId);
   });
 });
 
@@ -113,18 +131,23 @@ describe('listApiKeys', () => {
     const keys = await listApiKeys(db as any, 'non-existent-user-id');
     assert.equal(keys.length, 0);
   });
+
+  it('includes projectId on each key', async () => {
+    const keys = await listApiKeys(db as any, testUserId);
+    assert.ok(keys.every((k: any) => typeof k.projectId === 'string'));
+  });
 });
 
 describe('revokeApiKey', () => {
   it('sets revokedAt on the key', async () => {
-    const { record } = await createApiKey(db as any, testUserId, 'to-revoke');
+    const { record } = await createApiKey(db as any, testUserId, 'to-revoke', testProjectId);
     await revokeApiKey(db as any, record.id, testUserId);
     const updated = await pool.query(`SELECT * FROM "ApiKey" WHERE id = $1`, [record.id]);
     assert.ok(updated.rows[0].revokedAt instanceof Date);
   });
 
   it('throws when key does not belong to user', async () => {
-    const { record } = await createApiKey(db as any, testUserId, 'another-key');
+    const { record } = await createApiKey(db as any, testUserId, 'another-key', testProjectId);
     await assert.rejects(
       () => revokeApiKey(db as any, record.id, 'wrong-user-id'),
       /not found/i
@@ -134,7 +157,7 @@ describe('revokeApiKey', () => {
 
 describe('findActiveApiKey', () => {
   it('returns userId and label for valid key', async () => {
-    const { rawKey, record } = await createApiKey(db as any, testUserId, 'finder-key');
+    const { rawKey, record } = await createApiKey(db as any, testUserId, 'finder-key', testProjectId);
     const result = await findActiveApiKey(db as any, rawKey);
     assert.ok(result !== null);
     assert.equal(result.userId, testUserId);
@@ -147,9 +170,24 @@ describe('findActiveApiKey', () => {
   });
 
   it('returns null for revoked key', async () => {
-    const { rawKey, record } = await createApiKey(db as any, testUserId, 'revoked-key');
+    const { rawKey, record } = await createApiKey(db as any, testUserId, 'revoked-key', testProjectId);
     await revokeApiKey(db as any, record.id, testUserId);
     const result = await findActiveApiKey(db as any, rawKey);
     assert.equal(result, null);
+  });
+
+  it('returns the correct projectId for the key', async () => {
+    const { rawKey } = await createApiKey(db as any, testUserId, 'proj-key', testProjectId);
+    const result = await findActiveApiKey(db as any, rawKey);
+    assert.ok(result !== null);
+    assert.equal(result.projectId, testProjectId);
+  });
+
+  it('key for project A returns project A id, not project B id', async () => {
+    const { rawKey } = await createApiKey(db as any, testUserId, 'proj-a-key', testProjectId);
+    const result = await findActiveApiKey(db as any, rawKey);
+    assert.ok(result !== null);
+    assert.equal(result.projectId, testProjectId);
+    assert.notEqual(result.projectId, testProjectBId);
   });
 });

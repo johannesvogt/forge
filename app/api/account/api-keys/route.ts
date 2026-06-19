@@ -18,6 +18,7 @@ export async function GET() {
       last4: k.last4,
       createdAt: k.createdAt,
       revokedAt: k.revokedAt,
+      projectId: k.projectId,
     }))
   );
 }
@@ -32,11 +33,15 @@ export async function POST(request: NextRequest) {
   if (!body || typeof body.label !== 'string' || body.label.trim().length === 0) {
     return NextResponse.json({ error: 'label is required' }, { status: 400 });
   }
+  if (!body.projectId || typeof body.projectId !== 'string') {
+    return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
+  }
 
   const { rawKey, record } = await createApiKey(
     prisma,
     session.user.id,
-    body.label.trim()
+    body.label.trim(),
+    body.projectId
   );
 
   return NextResponse.json(
@@ -45,6 +50,7 @@ export async function POST(request: NextRequest) {
       label: record.label,
       last4: record.last4,
       createdAt: record.createdAt,
+      projectId: record.projectId,
       key: rawKey,
     },
     { status: 201 }

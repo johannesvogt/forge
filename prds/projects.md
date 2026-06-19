@@ -172,6 +172,17 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - 7 integration tests pass: create (slug, seeded skills, empty context), slug generation, list (ordered desc), get by slug (found + null), delete cascade (skills and context removed), slug conflict `SlugConflictError`.
 - `tsc --noEmit` passes with zero errors.
 
+### Issue #17 — Project-scoped API keys (done 2026-06-19)
+
+- Updated `createApiKey(db, userId, label, projectId)` — `projectId` is now a required parameter, persisted on the `ApiKey` record.
+- Updated `findActiveApiKey` — returns `{ userId, label, projectId }`.
+- `listApiKeys` already returns `ApiKey[]`; `projectId` is included automatically now that the Prisma client is regenerated.
+- Updated `app/api/account/api-keys/route.ts`: `POST` requires `projectId` in the request body; `GET` includes `projectId` in each key's response shape.
+- Regenerated Prisma client (`prisma generate`) so the `ApiKey` type includes `projectId`.
+- Test setup creates two isolated projects (A and B) per run; all `createApiKey` calls pass `testProjectId`.
+- 12 integration tests pass: all original tests updated, plus: `listApiKeys` includes `projectId`; `findActiveApiKey` returns correct `projectId`; key for project A returns project A id, not project B id.
+- `tsc --noEmit` passes with zero errors.
+
 ### Issue #15 — Project schema (done 2026-06-19)
 
 - `schema.prisma` already had the full Project model and `projectId` FKs; the stale migration was replaced.

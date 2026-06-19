@@ -4,13 +4,14 @@ import { generateApiKey, extractLast4, hashApiKey } from './api-keys.ts';
 export async function createApiKey(
   prisma: PrismaClient,
   userId: string,
-  label: string
+  label: string,
+  projectId: string
 ): Promise<{ rawKey: string; record: ApiKey }> {
   const rawKey = generateApiKey();
   const keyHash = hashApiKey(rawKey);
   const last4 = extractLast4(rawKey);
   const record = await prisma.apiKey.create({
-    data: { userId, label, keyHash, last4 },
+    data: { userId, label, keyHash, last4, projectId },
   });
   return { rawKey, record };
 }
@@ -38,9 +39,9 @@ export async function revokeApiKey(
 export async function findActiveApiKey(
   prisma: PrismaClient,
   rawKey: string
-): Promise<{ userId: string; label: string } | null> {
+): Promise<{ userId: string; label: string; projectId: string } | null> {
   const keyHash = hashApiKey(rawKey);
   const record = await prisma.apiKey.findUnique({ where: { keyHash } });
   if (!record || record.revokedAt !== null) return null;
-  return { userId: record.userId, label: record.label };
+  return { userId: record.userId, label: record.label, projectId: record.projectId };
 }
