@@ -1,3 +1,13 @@
+2026-06-19 — Issue 11: MCP Gateway — Documents
+
+Extended MCP server with four document tools so agents can manage the full document lifecycle.
+
+Deliverables:
+- lib/documents/document-service.ts — versionId: string added to Document interface; populated in createDocument, getDocument, getDocumentAtVersion, updateDocument so agents can use it as target_id for inline comments
+- mcp/server.ts — four new tools: create_doc(title, content, issue_id), get_doc(id, version?), update_doc(id, content), list_docs(issue_id); thin wrappers over existing document-service functions; agent label recorded as authorLabel
+- mcp/server.test.ts — makePgClient extended with document/documentVersion/documentIssueLink table implementations; after() extended to delete test documents; TEST_DOC_ISSUE_ID constant; 8 new TDD integration tests: create_doc (id/title/content/versionNumber/versionId), get_doc latest/specific-version/isError-on-missing, update_doc version-2-returned/v1-unchanged, list_docs two-docs-returned/empty-array
+- 169/169 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 10: MCP Gateway — Issues and Comments
 
 Foundational MCP server exposing issue tracker and comment system to agents via the Model Context Protocol.

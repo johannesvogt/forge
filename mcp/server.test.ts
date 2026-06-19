@@ -15,8 +15,120 @@ const pool = new Pool({ connectionString: DB_URL });
 const TEST_PREFIX = `mcp-test-${crypto.randomUUID().slice(0, 8)}`;
 const AGENT_LABEL = `${TEST_PREFIX}-agent`;
 
+const TEST_DOC_ISSUE_ID = `${TEST_PREFIX}-doc-issue`;
+
 function makePgClient(pool: InstanceType<typeof Pool>) {
   return {
+    document: {
+      create: async ({ data }: { data: { title: string } }) => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "Document" (id, title, "createdAt", "updatedAt") VALUES ($1,$2,$3,$3) RETURNING *`,
+          [id, data.title, now]
+        );
+        return r.rows[0];
+      },
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const r = await pool.query(`SELECT * FROM "Document" WHERE id = $1`, [where.id]);
+        return r.rows[0] ?? null;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: { updatedAt: Date } }) => {
+        const r = await pool.query(
+          `UPDATE "Document" SET "updatedAt" = $2 WHERE id = $1 RETURNING *`,
+          [where.id, data.updatedAt]
+        );
+        return r.rows[0];
+      },
+    },
+    documentVersion: {
+      create: async ({
+        data,
+      }: {
+        data: {
+          documentId: string;
+          versionNumber: number;
+          content: string;
+          authorUserId?: string | null;
+          authorLabel: string;
+        };
+      }) => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "DocumentVersion" (id, "documentId", "versionNumber", content, "authorUserId", "authorLabel", "createdAt")
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [id, data.documentId, data.versionNumber, data.content, data.authorUserId ?? null, data.authorLabel, now]
+        );
+        return r.rows[0];
+      },
+      findFirst: async ({
+        where,
+        orderBy,
+      }: {
+        where: { documentId: string; versionNumber?: number };
+        orderBy: { versionNumber: 'asc' | 'desc' };
+      }) => {
+        const dir = orderBy.versionNumber === 'desc' ? 'DESC' : 'ASC';
+        if (where.versionNumber !== undefined) {
+          const r = await pool.query(
+            `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 AND "versionNumber" = $2 ORDER BY "versionNumber" ${dir} LIMIT 1`,
+            [where.documentId, where.versionNumber]
+          );
+          return r.rows[0] ?? null;
+        }
+        const r = await pool.query(
+          `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 ORDER BY "versionNumber" ${dir} LIMIT 1`,
+          [where.documentId]
+        );
+        return r.rows[0] ?? null;
+      },
+      findMany: async ({
+        where,
+        orderBy,
+      }: {
+        where: { documentId: string };
+        orderBy: { versionNumber: 'asc' | 'desc' };
+      }) => {
+        const dir = orderBy.versionNumber === 'desc' ? 'DESC' : 'ASC';
+        const r = await pool.query(
+          `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 ORDER BY "versionNumber" ${dir}`,
+          [where.documentId]
+        );
+        return r.rows;
+      },
+    },
+    documentIssueLink: {
+      createMany: async ({
+        data,
+        skipDuplicates,
+      }: {
+        data: Array<{ documentId: string; issueId: string }>;
+        skipDuplicates: boolean;
+      }) => {
+        for (const item of data) {
+          if (skipDuplicates) {
+            await pool.query(
+              `INSERT INTO "DocumentIssueLink" ("documentId", "issueId") VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+              [item.documentId, item.issueId]
+            );
+          } else {
+            await pool.query(
+              `INSERT INTO "DocumentIssueLink" ("documentId", "issueId") VALUES ($1,$2)`,
+              [item.documentId, item.issueId]
+            );
+          }
+        }
+        return { count: data.length };
+      },
+      findMany: async ({ where }: { where: { issueId: string } }) => {
+        const r = await pool.query(
+          `SELECT * FROM "DocumentIssueLink" WHERE "issueId" = $1`,
+          [where.issueId]
+        );
+        return r.rows;
+      },
+    },
     issue: {
       create: async ({ data }: { data: { title: string; description?: string; column?: string } }) => {
         const id = crypto.randomUUID();
@@ -132,6 +244,7 @@ before(async () => {
 after(async () => {
   await pool.query(`DELETE FROM "Issue" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
+  await pool.query(`DELETE FROM "Document" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.end();
 });
 
@@ -296,6 +409,113 @@ describe('list_comments', () => {
     });
     const comments = parseText(result);
     assert.deepEqual(comments, []);
+  });
+});
+
+describe('create_doc', () => {
+  it('creates a document linked to an issue and returns id, title, content, versionNumber', async () => {
+    const result = await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-doc-create-1`, content: '# Hello\nContent.', issue_id: TEST_DOC_ISSUE_ID },
+    });
+    const doc = parseText(result) as { id: string; title: string; content: string; versionNumber: number; versionId: string };
+    assert.equal(doc.title, `${TEST_PREFIX}-doc-create-1`);
+    assert.equal(doc.content, '# Hello\nContent.');
+    assert.equal(doc.versionNumber, 1);
+    assert.ok(doc.id.length > 0);
+    assert.ok(doc.versionId.length > 0);
+  });
+});
+
+describe('get_doc', () => {
+  it('returns latest document content when no version specified', async () => {
+    const created = await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-doc-get-1`, content: 'Initial content', issue_id: TEST_DOC_ISSUE_ID },
+    });
+    const { id } = parseText(created) as { id: string };
+
+    const result = await client.callTool({ name: 'get_doc', arguments: { id } });
+    const doc = parseText(result) as { id: string; content: string; versionNumber: number };
+    assert.equal(doc.id, id);
+    assert.equal(doc.content, 'Initial content');
+    assert.equal(doc.versionNumber, 1);
+  });
+
+  it('returns specific version content when version is provided', async () => {
+    const created = await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-doc-get-2`, content: 'v1 content', issue_id: TEST_DOC_ISSUE_ID },
+    });
+    const { id } = parseText(created) as { id: string };
+    await client.callTool({ name: 'update_doc', arguments: { id, content: 'v2 content' } });
+
+    const result = await client.callTool({ name: 'get_doc', arguments: { id, version: 1 } });
+    const doc = parseText(result) as { content: string; versionNumber: number };
+    assert.equal(doc.content, 'v1 content');
+    assert.equal(doc.versionNumber, 1);
+  });
+
+  it('returns isError for unknown document id', async () => {
+    const result = await client.callTool({ name: 'get_doc', arguments: { id: 'nonexistent-doc-abc123' } });
+    assert.equal((result as { isError?: boolean }).isError, true);
+  });
+});
+
+describe('update_doc', () => {
+  it('appends new version and returns updated content and version number', async () => {
+    const created = await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-doc-update-1`, content: 'original', issue_id: TEST_DOC_ISSUE_ID },
+    });
+    const { id } = parseText(created) as { id: string };
+
+    const result = await client.callTool({ name: 'update_doc', arguments: { id, content: 'updated content' } });
+    const doc = parseText(result) as { versionNumber: number; content: string };
+    assert.equal(doc.versionNumber, 2);
+    assert.equal(doc.content, 'updated content');
+  });
+
+  it('leaves prior version content unchanged after update', async () => {
+    const created = await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-doc-update-2`, content: 'v1 original', issue_id: TEST_DOC_ISSUE_ID },
+    });
+    const { id } = parseText(created) as { id: string };
+    await client.callTool({ name: 'update_doc', arguments: { id, content: 'v2 new' } });
+
+    const v1Result = await client.callTool({ name: 'get_doc', arguments: { id, version: 1 } });
+    const v1 = parseText(v1Result) as { content: string; versionNumber: number };
+    assert.equal(v1.content, 'v1 original');
+    assert.equal(v1.versionNumber, 1);
+  });
+});
+
+describe('list_docs', () => {
+  it('returns documents linked to an issue', async () => {
+    const issueId = `${TEST_PREFIX}-list-docs-issue`;
+    await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-list-doc-A`, content: 'content A', issue_id: issueId },
+    });
+    await client.callTool({
+      name: 'create_doc',
+      arguments: { title: `${TEST_PREFIX}-list-doc-B`, content: 'content B', issue_id: issueId },
+    });
+
+    const result = await client.callTool({ name: 'list_docs', arguments: { issue_id: issueId } });
+    const docs = parseText(result) as Array<{ title: string }>;
+    assert.ok(Array.isArray(docs));
+    assert.equal(docs.length, 2);
+  });
+
+  it('returns empty array when no docs linked to issue', async () => {
+    const result = await client.callTool({
+      name: 'list_docs',
+      arguments: { issue_id: `${TEST_PREFIX}-no-docs-issue` },
+    });
+    const docs = parseText(result);
+    assert.deepEqual(docs, []);
   });
 });
 

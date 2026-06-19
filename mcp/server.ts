@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createIssue, listIssues, getIssue, updateIssue, moveIssue } from '../lib/issues/issue-service.ts';
 import { addComment, listComments } from '../lib/comments/comment-service.ts';
+import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,6 +135,68 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       }
       const comment = await addComment(db, input);
       return { content: [{ type: 'text' as const, text: JSON.stringify(comment) }] };
+    }
+  );
+
+  server.tool(
+    'create_doc',
+    'Create a new document linked to an issue',
+    {
+      title: z.string(),
+      content: z.string(),
+      issue_id: z.string(),
+    },
+    async ({ title, content, issue_id }) => {
+      const doc = await createDocument(db, {
+        title,
+        content,
+        issueId: issue_id,
+        authorLabel: agentLabel,
+        authorUserId: null,
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
+    }
+  );
+
+  server.tool(
+    'get_doc',
+    'Get a document by ID, optionally at a specific version number',
+    {
+      id: z.string(),
+      version: z.number().optional(),
+    },
+    async ({ id, version }) => {
+      const doc = version !== undefined
+        ? await getDocumentAtVersion(db, id, version)
+        : await getDocument(db, id);
+      if (!doc) throw new Error(`Document not found: ${id}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
+    }
+  );
+
+  server.tool(
+    'update_doc',
+    'Update a document, appending a new version with the given content',
+    {
+      id: z.string(),
+      content: z.string(),
+    },
+    async ({ id, content }) => {
+      const doc = await updateDocument(db, id, { content, authorLabel: agentLabel, authorUserId: null });
+      if (!doc) throw new Error(`Document not found: ${id}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
+    }
+  );
+
+  server.tool(
+    'list_docs',
+    'List documents linked to an issue',
+    {
+      issue_id: z.string(),
+    },
+    async ({ issue_id }) => {
+      const docs = await listDocumentsByIssue(db, issue_id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(docs) }] };
     }
   );
 

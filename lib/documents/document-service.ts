@@ -3,6 +3,7 @@ export interface Document {
   title: string;
   content: string;
   versionNumber: number;
+  versionId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,6 +95,7 @@ export async function createDocument(db: Db, input: CreateInput): Promise<Docume
     title: doc.title,
     content: version.content,
     versionNumber: version.versionNumber,
+    versionId: version.id,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -112,6 +114,7 @@ export async function getDocument(db: Db, id: string): Promise<Document | null> 
     title: doc.title,
     content: version.content,
     versionNumber: version.versionNumber,
+    versionId: version.id,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -134,6 +137,7 @@ export async function getDocumentAtVersion(
     title: doc.title,
     content: version.content,
     versionNumber: version.versionNumber,
+    versionId: version.id,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -171,6 +175,7 @@ export async function updateDocument(
     title: updatedDoc.title,
     content: version.content,
     versionNumber: version.versionNumber,
+    versionId: version.id,
     createdAt: updatedDoc.createdAt,
     updatedAt: updatedDoc.updatedAt,
   };

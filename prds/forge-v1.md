@@ -163,6 +163,15 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 11 — MCP Gateway: Documents (completed 2026-06-19)
+
+Extended the MCP server with four document tools, giving agents full document lifecycle management through MCP.
+
+- **`Document` interface extended** (`lib/documents/document-service.ts`): Added `versionId: string` to the `Document` interface and populated it from `version.id` in `createDocument`, `getDocument`, `getDocumentAtVersion`, and `updateDocument`. Agents need `versionId` as the `target_id` when adding inline comments to document sections via `add_comment`.
+- **MCP tools added** (`mcp/server.ts`): Imported `createDocument`, `getDocument`, `getDocumentAtVersion`, `updateDocument`, `listDocumentsByIssue`. Added four tools: `create_doc(title, content, issue_id)` — creates a document linked to an issue, returns document with `versionId`; `get_doc(id, version?)` — returns latest version or a specific snapshot; `update_doc(id, content)` — appends a new version, prior versions unchanged; `list_docs(issue_id)` — returns all documents linked to an issue.
+- **TDD tests** (`mcp/server.test.ts`): Extended `makePgClient` with `document`, `documentVersion`, and `documentIssueLink` table implementations. Added `TEST_DOC_ISSUE_ID` constant and document cleanup in `after`. Added 8 new integration tests across 4 suites: `create_doc` (returns id/title/content/versionNumber/versionId), `get_doc` (latest version, specific version, isError on missing), `update_doc` (version 2 returned, v1 unchanged), `list_docs` (two docs for issue, empty array).
+- **Test count**: 169/169 pass; `tsc --noEmit` clean.
+
 ### Issue 10 — MCP Gateway: Issues and Comments (completed 2026-06-19)
 
 Foundational MCP server giving agents access to the issue tracker and comment system via the Model Context Protocol.
