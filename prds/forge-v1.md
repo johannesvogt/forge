@@ -163,6 +163,16 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 6 — Document Store: Versioning (completed 2026-06-19)
+
+Append-only version history for documents. Every update creates a new version snapshot; prior versions are never mutated. The viewer exposes a version history sidebar, a version selector, and a diff view.
+
+- **Service layer** (`lib/documents/document-service.ts`): Added `updateDocument` (appends next version, updates Document.updatedAt), `getDocumentAtVersion` (fetches a specific version by number), `listDocumentVersions` (returns all versions in ascending order with author and timestamp), `diffDocumentVersions` (returns unified diff between any two versions). Extended `Db` interface with `document.update`, `documentVersion.findFirst` supporting optional `versionNumber` in where clause, and `documentVersion.findMany`. Added `computeUnifiedDiff` pure helper (LCS-based Myers diff, context hunks, unified diff format).
+- **TDD tests** (`lib/documents/document-service.test.ts`): 17 new integration tests covering: version 2 created on update, v1 content unchanged, null for nonexistent doc/version, successive increments, getDocument returns latest after update, getDocumentAtVersion v1/v2/missing/nonexistent doc, listDocumentVersions order/author/timestamp/empty, diffDocumentVersions correct diff/identical/nonexistent doc/missing version. Updated `makePgClient` to support new db methods.
+- **API routes**: `GET /api/documents/[id]?version=N` returns content at that version (400 on bad param, 404 on missing). `GET /api/documents/[id]/versions` lists all versions. `POST /api/documents/[id]/versions` creates a new version (dual auth). `GET /api/documents/[id]/diff?from=N&to=M` returns `{ diff: string }`.
+- **Document viewer** (`app/documents/[id]/page.tsx`): Version history sidebar (clickable versions sorted newest-first), View/Compare tabs, diff view with from/to selectors and syntax-highlighted output (green additions, red deletions, blue hunk headers).
+- **Test count**: 126/126 pass; `tsc --noEmit` clean.
+
 ### Issue 5 — Document Store: Create and Read (completed 2026-06-19)
 
 First-class Document entities with versioned storage, issue linking, and a read-back UI.

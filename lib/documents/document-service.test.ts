@@ -8,6 +8,10 @@ import {
   getDocument,
   listDocumentsByIssue,
   linkDocumentToIssue,
+  updateDocument,
+  getDocumentAtVersion,
+  listDocumentVersions,
+  diffDocumentVersions,
   type Document,
 } from './document-service.ts';
 
@@ -32,6 +36,13 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
       findUnique: async ({ where }: { where: { id: string } }) => {
         const r = await pool.query(`SELECT * FROM "Document" WHERE id = $1`, [where.id]);
         return r.rows[0] ?? null;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: { updatedAt: Date } }) => {
+        const r = await pool.query(
+          `UPDATE "Document" SET "updatedAt" = $2 WHERE id = $1 RETURNING *`,
+          [where.id, data.updatedAt]
+        );
+        return r.rows[0];
       },
     },
     documentVersion: {
@@ -59,15 +70,36 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         where,
         orderBy,
       }: {
-        where: { documentId: string };
+        where: { documentId: string; versionNumber?: number };
         orderBy: { versionNumber: 'asc' | 'desc' };
       }) => {
         const dir = orderBy.versionNumber === 'desc' ? 'DESC' : 'ASC';
+        if (where.versionNumber !== undefined) {
+          const r = await pool.query(
+            `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 AND "versionNumber" = $2 ORDER BY "versionNumber" ${dir} LIMIT 1`,
+            [where.documentId, where.versionNumber]
+          );
+          return r.rows[0] ?? null;
+        }
         const r = await pool.query(
           `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 ORDER BY "versionNumber" ${dir} LIMIT 1`,
           [where.documentId]
         );
         return r.rows[0] ?? null;
+      },
+      findMany: async ({
+        where,
+        orderBy,
+      }: {
+        where: { documentId: string };
+        orderBy: { versionNumber: 'asc' | 'desc' };
+      }) => {
+        const dir = orderBy.versionNumber === 'desc' ? 'DESC' : 'ASC';
+        const r = await pool.query(
+          `SELECT * FROM "DocumentVersion" WHERE "documentId" = $1 ORDER BY "versionNumber" ${dir}`,
+          [where.documentId]
+        );
+        return r.rows;
       },
     },
     documentIssueLink: {
@@ -278,5 +310,250 @@ describe('linkDocumentToIssue', () => {
       await linkDocumentToIssue(db as any, doc.id, TEST_ISSUE_ID);
       await linkDocumentToIssue(db as any, doc.id, TEST_ISSUE_ID);
     });
+  });
+});
+
+describe('updateDocument', () => {
+  it('creates version 2 with new content', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Versioned Doc',
+      content: 'Original content',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    const updated = await updateDocument(db as any, doc.id, {
+      content: 'Updated content',
+      authorLabel: 'Bob',
+    });
+
+    assert.ok(updated !== null);
+    assert.equal(updated.id, doc.id);
+    assert.equal(updated.versionNumber, 2);
+    assert.equal(updated.content, 'Updated content');
+  });
+
+  it('leaves version 1 content unchanged after update', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Immutable v1',
+      content: 'v1 content',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    await updateDocument(db as any, doc.id, {
+      content: 'v2 content',
+      authorLabel: 'Bob',
+    });
+
+    const v1 = await getDocumentAtVersion(db as any, doc.id, 1);
+    assert.ok(v1 !== null);
+    assert.equal(v1.content, 'v1 content');
+    assert.equal(v1.versionNumber, 1);
+  });
+
+  it('returns null for a nonexistent document', async () => {
+    const result = await updateDocument(db as any, 'nonexistent-doc', {
+      content: 'content',
+      authorLabel: 'Alice',
+    });
+    assert.equal(result, null);
+  });
+
+  it('increments version number on successive updates', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Multi-version',
+      content: 'v1',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    const v2 = await updateDocument(db as any, doc.id, { content: 'v2', authorLabel: 'Bob' });
+    const v3 = await updateDocument(db as any, doc.id, { content: 'v3', authorLabel: 'Carol' });
+
+    assert.equal(v2?.versionNumber, 2);
+    assert.equal(v3?.versionNumber, 3);
+  });
+
+  it('getDocument returns latest version after update', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Latest Version',
+      content: 'old',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    await updateDocument(db as any, doc.id, { content: 'new', authorLabel: 'Bob' });
+
+    const latest = await getDocument(db as any, doc.id);
+    assert.ok(latest !== null);
+    assert.equal(latest.content, 'new');
+    assert.equal(latest.versionNumber, 2);
+  });
+});
+
+describe('getDocumentAtVersion', () => {
+  it('returns version 1 content after an update', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Versioned',
+      content: 'version one',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'version two', authorLabel: 'Bob' });
+
+    const v1 = await getDocumentAtVersion(db as any, doc.id, 1);
+    assert.ok(v1 !== null);
+    assert.equal(v1.content, 'version one');
+    assert.equal(v1.versionNumber, 1);
+  });
+
+  it('returns version 2 content', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Versioned',
+      content: 'v1',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'v2 content here', authorLabel: 'Bob' });
+
+    const v2 = await getDocumentAtVersion(db as any, doc.id, 2);
+    assert.ok(v2 !== null);
+    assert.equal(v2.content, 'v2 content here');
+    assert.equal(v2.versionNumber, 2);
+  });
+
+  it('returns null for a nonexistent version number', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Single version',
+      content: 'content',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    const result = await getDocumentAtVersion(db as any, doc.id, 99);
+    assert.equal(result, null);
+  });
+
+  it('returns null for a nonexistent document', async () => {
+    const result = await getDocumentAtVersion(db as any, 'nonexistent', 1);
+    assert.equal(result, null);
+  });
+});
+
+describe('listDocumentVersions', () => {
+  it('lists all versions in ascending order', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'History Doc',
+      content: 'v1',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'v2', authorLabel: 'Bob' });
+    await updateDocument(db as any, doc.id, { content: 'v3', authorLabel: 'Carol' });
+
+    const versions = await listDocumentVersions(db as any, doc.id);
+    assert.equal(versions.length, 3);
+    assert.equal(versions[0].versionNumber, 1);
+    assert.equal(versions[1].versionNumber, 2);
+    assert.equal(versions[2].versionNumber, 3);
+  });
+
+  it('includes authorLabel on each version', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Author Check',
+      content: 'v1',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'v2', authorLabel: 'Bob' });
+
+    const versions = await listDocumentVersions(db as any, doc.id);
+    assert.equal(versions[0].authorLabel, 'Alice');
+    assert.equal(versions[1].authorLabel, 'Bob');
+  });
+
+  it('includes createdAt on each version', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Timestamp Check',
+      content: 'v1',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    const versions = await listDocumentVersions(db as any, doc.id);
+    assert.ok(versions[0].createdAt);
+  });
+
+  it('returns empty array for nonexistent document', async () => {
+    const versions = await listDocumentVersions(db as any, 'nonexistent-doc');
+    assert.deepEqual(versions, []);
+  });
+});
+
+describe('diffDocumentVersions', () => {
+  it('returns unified diff between v1 and v2', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Diff Doc',
+      content: 'Hello\nWorld',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'Hello\nForge', authorLabel: 'Bob' });
+
+    const diff = await diffDocumentVersions(db as any, doc.id, 1, 2);
+    assert.ok(diff !== null);
+    assert.ok(diff.includes('--- v1'));
+    assert.ok(diff.includes('+++ v2'));
+    assert.ok(diff.includes('-World'));
+    assert.ok(diff.includes('+Forge'));
+    assert.ok(diff.includes(' Hello'));
+  });
+
+  it('returns empty diff header when versions are identical', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Same Content',
+      content: 'unchanged',
+      issueId,
+      authorLabel: 'Alice',
+    });
+    await updateDocument(db as any, doc.id, { content: 'unchanged', authorLabel: 'Bob' });
+
+    const diff = await diffDocumentVersions(db as any, doc.id, 1, 2);
+    assert.ok(diff !== null);
+    assert.ok(diff.includes('--- v1'));
+    assert.ok(diff.includes('+++ v2'));
+    // No hunks when content is identical
+    assert.ok(!diff.includes('@@'));
+  });
+
+  it('returns null when document does not exist', async () => {
+    const result = await diffDocumentVersions(db as any, 'nonexistent', 1, 2);
+    assert.equal(result, null);
+  });
+
+  it('returns null when a version does not exist', async () => {
+    const issueId = `test-issue-${crypto.randomUUID()}`;
+    const doc = await createDocument(db as any, {
+      title: 'Missing Version',
+      content: 'content',
+      issueId,
+      authorLabel: 'Alice',
+    });
+
+    const result = await diffDocumentVersions(db as any, doc.id, 1, 99);
+    assert.equal(result, null);
   });
 });

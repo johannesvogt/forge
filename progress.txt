@@ -1,3 +1,16 @@
+2026-06-19 — Issue 6: Document Store Versioning
+
+Append-only version history for documents with diff view.
+
+Deliverables:
+- lib/documents/document-service.ts — updateDocument, getDocumentAtVersion, listDocumentVersions, diffDocumentVersions; extended Db interface with document.update, documentVersion.findMany, optional versionNumber in findFirst where; LCS-based computeUnifiedDiff helper
+- lib/documents/document-service.test.ts — 17 new TDD integration tests (create v2, v1 immutable, null for missing, successive increments, latest after update, getDocumentAtVersion x4, listDocumentVersions x4, diffDocumentVersions x4)
+- app/api/documents/[id]/route.ts — GET ?version=N returns content at that version
+- app/api/documents/[id]/versions/route.ts — GET list versions + POST create new version (dual auth)
+- app/api/documents/[id]/diff/route.ts — GET ?from=N&to=M returns unified diff
+- app/documents/[id]/page.tsx — version history sidebar, View/Compare tabs, diff viewer with syntax highlighting
+- 126/126 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 5: Document Store (Create and Read)
 
 First-class Document entities with append-only versioning foundation, issue linking, and a read-back UI.
