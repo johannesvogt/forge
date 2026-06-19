@@ -163,6 +163,23 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 2 — Human Auth and API Keys (completed 2026-06-19)
+
+Full end-to-end authentication slice for humans and agents. Key decisions:
+
+- **Bearer extraction**: `lib/auth/bearer.ts` — pure `extractBearer(header)` function, TDD-tested in isolation (7 cases).
+- **Password layer**: `lib/auth/password.ts` — bcrypt hash/verify, salt rounds = 12. Unit-tested.
+- **User service**: `lib/auth/users.ts` — `createUser`, `findUserByEmail`, `validateUserCredentials`. Integration-tested against real PostgreSQL via pg pool.
+- **API key crypto**: `lib/auth/api-keys.ts` — `generateApiKey` (`frg_` prefix + 32 random bytes hex), `hashApiKey` (SHA-256), `verifyApiKey` (timing-safe compare). Unit-tested.
+- **API key service**: `lib/auth/api-key-service.ts` — `createApiKey`, `listApiKeys`, `revokeApiKey`, `findActiveApiKey`. Integration-tested against real PostgreSQL.
+- **NextAuth config**: `lib/auth/nextauth-config.ts` — credentials provider wired to `validateUserCredentials`; JWT strategy; session callback adds `user.id` from token.
+- **Session type augmentation**: `types/next-auth.d.ts` — extends `Session.user` with `id: string` and `JWT` with `id?: string`.
+- **Middleware**: `middleware.ts` — `getToken` (Edge-compatible JWT validation) protects all routes except `/login`, `/signup`, `/api/auth/*`, `/api/agent/*`; API routes get 401, page routes get redirect to `/login?callbackUrl=…`.
+- **API routes**: signup (`POST /api/auth/signup`), NextAuth handler, API key list/create (`/api/account/api-keys`), revoke (`DELETE /api/account/api-keys/[id]`), agent ping (`GET /api/agent/ping`).
+- **UI**: `/login` (NextAuth `signIn`), `/signup` (POST to signup route), `/account` (list/generate/revoke keys; new key shown once then dismissed).
+- **SessionProvider**: wrapped in `app/providers.tsx` client component; injected in root layout.
+- **Test count**: 40/40 pass; `tsc --noEmit` clean.
+
 ### Issue 1 — Project Scaffold (completed 2026-06-18)
 
 Initialized the Next.js 16 App Router monorepo with TypeScript, Prisma 7, Tailwind CSS 3, and PostgreSQL. Key decisions made during implementation:

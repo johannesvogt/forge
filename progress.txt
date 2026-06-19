@@ -1,3 +1,27 @@
+2026-06-19 — Issue 2: Human Auth and API Keys
+
+End-to-end authentication for humans (email/password via NextAuth.js JWT) and agents (opaque API keys as Bearer tokens).
+
+Deliverables:
+- lib/auth/bearer.ts — extractBearer() pure function; 7 TDD unit tests
+- lib/auth/password.ts — bcrypt hash/verify (already in place, tests passing)
+- lib/auth/users.ts — createUser, findUserByEmail, validateUserCredentials; integration tests against real PG
+- lib/auth/api-keys.ts — generateApiKey (frg_ prefix), SHA-256 hash, timing-safe verify; unit tests
+- lib/auth/api-key-service.ts — createApiKey, listApiKeys, revokeApiKey, findActiveApiKey; integration tests
+- lib/auth/nextauth-config.ts — credentials provider + JWT strategy + session.user.id callback
+- types/next-auth.d.ts — extends Session and JWT types with id field
+- middleware.ts — JWT session guard (Edge-compatible); redirects pages, 401s for API routes
+- app/api/auth/[...nextauth]/route.ts — NextAuth handler
+- app/api/auth/signup/route.ts — POST signup with validation and duplicate-email 409
+- app/api/account/api-keys/route.ts — GET list + POST create (returns raw key once)
+- app/api/account/api-keys/[id]/route.ts — DELETE revoke
+- app/api/agent/ping/route.ts — Bearer auth test endpoint
+- app/login/page.tsx — credentials login form
+- app/signup/page.tsx — signup form
+- app/account/page.tsx — API key management (generate + revoke; key shown once)
+- app/providers.tsx — SessionProvider client wrapper in root layout
+- 40/40 tests passing; tsc --noEmit clean
+
 2026-06-18 — Issue 1: Project Scaffold
 
 Initialized Next.js 16 App Router monorepo (TypeScript, Tailwind CSS v3, Prisma 7, PostgreSQL).
