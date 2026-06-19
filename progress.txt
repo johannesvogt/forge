@@ -1,3 +1,18 @@
+2026-06-19 — Issue 3: Issue Tracker Kanban and State Machine
+
+Six-column kanban board with server-enforced state machine, CRUD API, and move UI.
+
+Deliverables:
+- prisma/schema.prisma — Issue model (id, title, description, column, timestamps)
+- lib/issues/state-machine.ts — canTransition(), transition(); 39 TDD unit tests (all valid/invalid pairs + no-ops)
+- lib/issues/issue-service.ts — createIssue, listIssues, getIssue, updateIssue, moveIssue; 12 integration tests against real PG
+- app/api/issues/route.ts — GET list (optional ?column filter) + POST create
+- app/api/issues/[id]/route.ts — GET detail + PATCH update
+- app/api/issues/[id]/move/route.ts — POST move (422 on invalid transition, 404 if not found)
+- app/board/page.tsx — six-column kanban board; inline create form; review columns visually distinct
+- app/board/[id]/page.tsx — issue detail with column badge and move buttons for valid transitions
+- 91/91 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 2: Human Auth and API Keys
 
 End-to-end authentication for humans (email/password via NextAuth.js JWT) and agents (opaque API keys as Bearer tokens).

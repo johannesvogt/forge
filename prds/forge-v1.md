@@ -163,6 +163,18 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 3 — Issue Tracker Kanban and State Machine (completed 2026-06-19)
+
+Six-column kanban board with server-enforced state machine, issue CRUD, and a detail/move UI.
+
+- **State machine**: `lib/issues/state-machine.ts` — pure `canTransition`/`transition` functions; 39 TDD unit tests covering every valid/invalid pair and same-column no-ops. Invalid transitions throw `Error("Invalid transition: FROM → TO")`.
+- **Issue service**: `lib/issues/issue-service.ts` — `createIssue`, `listIssues`, `getIssue`, `updateIssue`, `moveIssue`; 12 integration tests against real PostgreSQL via pg pool.
+- **Prisma schema**: `Issue` model with `id`, `title`, `description`, `column`, `createdAt`, `updatedAt`. `column` is stored as a plain string enum value (`BACKLOG` / `TODO` / `IN_PROGRESS` / `NEEDS_HUMAN_REVIEW` / `NEEDS_AGENT_REVIEW` / `DONE`); transitions enforced in the service layer, not at DB level.
+- **API routes**: `GET/POST /api/issues`, `GET/PATCH /api/issues/[id]`, `POST /api/issues/[id]/move`. All require NextAuth session. Invalid column names → 400; invalid transitions → 422; not found → 404.
+- **Board UI** (`app/board/page.tsx`): client component; fetches all issues on load; renders six columns with issue count badges; Needs Human/Agent Review columns use amber styling to stand out; Done column uses green. `+ New Issue` form creates issues defaulting to Backlog.
+- **Detail UI** (`app/board/[id]/page.tsx`): client component; shows title, description, column badge, and move buttons for every valid next column. Move errors shown inline. Back-link to board.
+- **Test count**: 91/91 pass (`tsc --noEmit` clean).
+
 ### Issue 2 — Human Auth and API Keys (completed 2026-06-19)
 
 Full end-to-end authentication slice for humans and agents. Key decisions:
