@@ -5,6 +5,7 @@ import { addComment, listComments } from '../lib/comments/comment-service.ts';
 import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
 import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
 import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
+import { getProjectContext, updateProjectContext } from '../lib/context/context-service.ts';
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,6 +272,37 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     async ({ name }) => {
       const result = await getSkillWithFiles(db, name);
       if (!result) throw new Error(`Skill not found: ${name}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'get_project_context',
+    'Get the current project context (CONTEXT.md). Load this at session start for project orientation.',
+    {},
+    async () => {
+      const ctx = await getProjectContext(db);
+      const content = ctx?.content ?? '';
+      return { content: [{ type: 'text' as const, text: content }] };
+    }
+  );
+
+  server.tool(
+    'update_project_context',
+    'Replace the project context with new content. Returns a warning if content exceeds 1000 tokens, but still saves.',
+    { content: z.string() },
+    async ({ content }) => {
+      const { context, warning } = await updateProjectContext(db, {
+        content,
+        authorLabel: agentLabel,
+        authorUserId: null,
+      });
+      const result: { id: string; authorLabel: string; updatedAt: Date; warning?: string } = {
+        id: context.id,
+        authorLabel: context.authorLabel,
+        updatedAt: context.updatedAt,
+      };
+      if (warning) result.warning = warning;
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     }
   );

@@ -112,3 +112,11 @@ model SkillFile {
 
   @@unique([skillId, name])
 }
+
+model ProjectContext {
+  id           String   @id @default("singleton")
+  content      String   @default("")
+  authorLabel  String   @default("system")
+  authorUserId String?
+  updatedAt    DateTime @updatedAt
+}

@@ -323,6 +323,32 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         await pool.query(`DELETE FROM "SkillFile" WHERE id = $1`, [where.id]);
       },
     },
+    projectContext: {
+      upsert: async ({
+        create,
+      }: {
+        where: { id: string };
+        create: { id: string; content: string; authorLabel: string; authorUserId: string | null };
+        update: { content: string; authorLabel: string; authorUserId: string | null; updatedAt: Date };
+      }) => {
+        const r = await pool.query(
+          `INSERT INTO "ProjectContext" (id, content, "authorLabel", "authorUserId", "updatedAt")
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             content = $2,
+             "authorLabel" = $3,
+             "authorUserId" = $4,
+             "updatedAt" = NOW()
+           RETURNING *`,
+          [create.id, create.content, create.authorLabel, create.authorUserId]
+        );
+        return r.rows[0];
+      },
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const r = await pool.query(`SELECT * FROM "ProjectContext" WHERE id = $1`, [where.id]);
+        return r.rows[0] ?? null;
+      },
+    },
   };
 }
 
@@ -350,6 +376,7 @@ after(async () => {
   await pool.query(`DELETE FROM "Document" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.query(`DELETE FROM "Diff" WHERE "issueId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
   await pool.query(`DELETE FROM "Skill" WHERE name LIKE $1`, [`${TEST_PREFIX}%`]);
+  await pool.query(`DELETE FROM "ProjectContext" WHERE "authorLabel" = $1`, [AGENT_LABEL]);
   await pool.end();
 });
 
@@ -941,5 +968,85 @@ describe('get_skill', () => {
       arguments: { name: `${TEST_PREFIX}-skill-ghost` },
     });
     assert.equal((result as { isError?: boolean }).isError, true);
+  });
+});
+
+describe('get_project_context', () => {
+  before(async () => {
+    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+  });
+
+  after(async () => {
+    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+  });
+
+  it('returns empty string when no context has been set', async () => {
+    const result = await client.callTool({ name: 'get_project_context', arguments: {} });
+    const r = result as { content: Array<{ type: string; text: string }> };
+    assert.equal(r.content[0].text, '');
+  });
+
+  it('returns content after update_project_context is called', async () => {
+    await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: '# My Project\nAgent orientation.' },
+    });
+    const result = await client.callTool({ name: 'get_project_context', arguments: {} });
+    const r = result as { content: Array<{ type: string; text: string }> };
+    assert.equal(r.content[0].text, '# My Project\nAgent orientation.');
+  });
+});
+
+describe('update_project_context', () => {
+  before(async () => {
+    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+  });
+
+  after(async () => {
+    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+  });
+
+  it('saves content and returns id and authorLabel', async () => {
+    const result = await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: '# Context\nSome details.' },
+    });
+    const data = parseText(result) as { id: string; authorLabel: string };
+    assert.equal(data.id, 'singleton');
+    assert.equal(data.authorLabel, AGENT_LABEL);
+  });
+
+  it('replaces existing content on second call', async () => {
+    await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: 'First write' },
+    });
+    await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: 'Second write' },
+    });
+    const result = await client.callTool({ name: 'get_project_context', arguments: {} });
+    const r = result as { content: Array<{ type: string; text: string }> };
+    assert.equal(r.content[0].text, 'Second write');
+  });
+
+  it('returns no warning for content within token limit', async () => {
+    const result = await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: 'Short content.' },
+    });
+    const data = parseText(result) as { warning?: string };
+    assert.equal(data.warning, undefined);
+  });
+
+  it('returns a warning when content exceeds 1000 tokens', async () => {
+    const bigContent = 'x'.repeat(4001);
+    const result = await client.callTool({
+      name: 'update_project_context',
+      arguments: { content: bigContent },
+    });
+    const data = parseText(result) as { warning?: string };
+    assert.ok(data.warning !== undefined, 'expected a warning');
+    assert.ok(data.warning!.includes('1000 tokens'));
   });
 });

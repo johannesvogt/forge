@@ -1,3 +1,17 @@
+2026-06-19 — Issue 14: Project Context Manager
+
+Single CONTEXT.md per project stored in the database. Humans edit via web UI; agents read and write via MCP. Token warning at >1000 tokens but writes always succeed. Seeded from the project's CONTEXT.md file on first load.
+
+Deliverables:
+- prisma/schema.prisma — ProjectContext model (id "singleton" default, content, authorLabel, authorUserId?, updatedAt); db push + client regenerated
+- lib/context/context-service.ts — ProjectContext and UpdateContextResult interfaces; Db interface for testability; getProjectContext, updateProjectContext (upsert, returns warning if >1000 estimated tokens)
+- lib/context/context-service.test.ts — 7 TDD integration tests (null on empty, stored after update, create when none, replace existing, authorUserId stored, no warning for small content, warning for >1000 tokens)
+- app/api/context/route.ts — GET (auto-seeds from CONTEXT.md on first call, human session) + PATCH (update, human session; returns context + optional warning)
+- app/context/page.tsx — shows current content with last-updated author and timestamp; inline Edit mode with textarea; displays token warning on save if triggered
+- mcp/server.ts — get_project_context() returns raw markdown; update_project_context(content) upserts and returns {id, authorLabel, updatedAt, warning?}
+- mcp/server.test.ts — projectContext added to makePgClient; cleanup in after(); 6 new integration tests: get_project_context (empty string, returns content after update), update_project_context (id+authorLabel returned, replaces content, no warning, warning for large content)
+- 214/214 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 13: Skill Registry
 
 Humans manage prompt-based skills via the web UI; agents load them read-only via MCP. Five default skills seeded on first load.
