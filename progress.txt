@@ -1,3 +1,14 @@
+2026-06-19 — Issue 4: Issue Comments
+
+Threaded comment system on issues, establishing the shared polymorphic Comment data model for future document and diff comment slices.
+
+Deliverables:
+- prisma/schema.prisma — Comment model (targetType, targetId, body, authorUserId, authorLabel, status, createdAt)
+- lib/comments/comment-service.ts — addComment, listComments; 7 TDD integration tests (human author, agent author, chronological order, isolation by targetType/targetId, empty results, full field check)
+- app/api/issues/[id]/comments/route.ts — GET list (human session) + POST create (dual auth: human session or agent Bearer token); 404/400/401 error handling
+- app/board/[id]/page.tsx — comment thread in chronological order with author name and timestamp; inline add-comment textarea form; optimistic append on submit
+- 98/98 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 3: Issue Tracker Kanban and State Machine
 
 Six-column kanban board with server-enforced state machine, CRUD API, and move UI.

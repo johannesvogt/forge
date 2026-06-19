@@ -163,6 +163,16 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 4 — Issue Comments (completed 2026-06-19)
+
+Threaded comment system on issues. Establishes the shared polymorphic Comment data model reused by document and diff comments in later slices.
+
+- **Comment model**: `prisma/schema.prisma` — `Comment` with `targetType` (issue/document_section/diff_line), `targetId`, `body`, `authorUserId` (null for agents), `authorLabel`, `status` (open/resolved), `createdAt`. Schema pushed via `prisma db push`.
+- **Comment service**: `lib/comments/comment-service.ts` — `addComment`, `listComments`; accepts a Db interface matching Prisma shape for testability. 7 TDD integration tests against real PostgreSQL covering human author, agent author (no userId), chronological ordering, empty results, cross-targetType isolation, and full field verification.
+- **API route**: `app/api/issues/[id]/comments/route.ts` — `GET` (list, human session required) + `POST` (add, dual auth: human session or agent Bearer token). Returns 404 when issue not found, 400 when body missing, 401 when unauthenticated.
+- **Issue detail UI** (`app/board/[id]/page.tsx`): comment thread renders in chronological order with author name and timestamp; inline add-comment form with textarea and submit button; new comment appends optimistically without reload; agent label shown when no userId.
+- **Test count**: 98/98 pass; `tsc --noEmit` clean.
+
 ### Issue 3 — Issue Tracker Kanban and State Machine (completed 2026-06-19)
 
 Six-column kanban board with server-enforced state machine, issue CRUD, and a detail/move UI.

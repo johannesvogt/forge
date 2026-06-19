@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -37,6 +37,15 @@ interface Issue {
   updatedAt: string;
 }
 
+interface Comment {
+  id: string;
+  body: string;
+  authorLabel: string;
+  authorUserId: string | null;
+  status: string;
+  createdAt: string;
+}
+
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -46,6 +55,12 @@ export default function IssueDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentBody, setCommentBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchIssue = useCallback(async () => {
     try {
@@ -60,7 +75,20 @@ export default function IssueDetailPage() {
     }
   }, [id, router]);
 
-  useEffect(() => { fetchIssue(); }, [fetchIssue]);
+  const fetchComments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/issues/${id}/comments`);
+      if (!res.ok) return;
+      setComments(await res.json());
+    } catch {
+      // non-critical — comments fail silently
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchIssue();
+    fetchComments();
+  }, [fetchIssue, fetchComments]);
 
   async function handleMove(target: ColumnId) {
     if (!issue) return;
@@ -81,6 +109,31 @@ export default function IssueDetailPage() {
       setMoveError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setMoving(null);
+    }
+  }
+
+  async function handleAddComment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!commentBody.trim()) return;
+    setSubmitting(true);
+    setCommentError(null);
+    try {
+      const res = await fetch(`/api/issues/${id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: commentBody.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Failed to add comment');
+      }
+      const newComment: Comment = await res.json();
+      setComments((prev) => [...prev, newComment]);
+      setCommentBody('');
+    } catch (e) {
+      setCommentError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -150,6 +203,54 @@ export default function IssueDetailPage() {
           Created {new Date(issue.createdAt).toLocaleString()} ·{' '}
           Updated {new Date(issue.updatedAt).toLocaleString()}
         </div>
+      </div>
+
+      {/* Comment thread */}
+      <div className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold text-gray-700">
+          Comments {comments.length > 0 && <span className="text-gray-400">({comments.length})</span>}
+        </h2>
+
+        {comments.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No comments yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {comments.map((comment) => (
+              <div key={comment.id} className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-gray-700">{comment.authorLabel}</span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(comment.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{comment.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleAddComment} className="mt-4">
+          <textarea
+            ref={textareaRef}
+            value={commentBody}
+            onChange={(e) => setCommentBody(e.target.value)}
+            placeholder="Add a comment…"
+            rows={3}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          />
+          {commentError && (
+            <p className="mt-1 text-xs text-red-600">{commentError}</p>
+          )}
+          <div className="mt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={submitting || !commentBody.trim()}
+              className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {submitting ? 'Posting…' : 'Comment'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
