@@ -1,0 +1,141 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { createIssue, listIssues, getIssue, updateIssue, moveIssue } from '../lib/issues/issue-service.ts';
+import { addComment, listComments } from '../lib/comments/comment-service.ts';
+import type { Column } from '../lib/issues/state-machine.ts';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createMcpServer(db: any, agentLabel: string): McpServer {
+  const server = new McpServer({ name: 'forge-mcp', version: '1.0.0' });
+
+  server.tool(
+    'list_issues',
+    'List issues, optionally filtered by column',
+    { column: z.string().optional() },
+    async ({ column }) => {
+      const issues = await listIssues(db, column);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issues) }] };
+    }
+  );
+
+  server.tool(
+    'get_issue',
+    'Get a single issue by ID',
+    { id: z.string() },
+    async ({ id }) => {
+      const issue = await getIssue(db, id);
+      if (!issue) throw new Error(`Issue not found: ${id}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+    }
+  );
+
+  server.tool(
+    'create_issue',
+    'Create a new issue',
+    {
+      title: z.string(),
+      description: z.string().optional(),
+      column: z.string().optional(),
+    },
+    async ({ title, description, column }) => {
+      const issue = await createIssue(db, { title, description, column });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+    }
+  );
+
+  server.tool(
+    'update_issue',
+    'Update an issue title or description',
+    {
+      id: z.string(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+    },
+    async ({ id, title, description }) => {
+      const issue = await updateIssue(db, id, { title, description });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+    }
+  );
+
+  server.tool(
+    'move_issue',
+    'Move an issue to a new column, enforcing the state machine',
+    {
+      id: z.string(),
+      column: z.string(),
+    },
+    async ({ id, column }) => {
+      const issue = await moveIssue(db, id, column as Column);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+    }
+  );
+
+  server.tool(
+    'list_comments',
+    'List comments on a target (issue, document_section, or diff_line)',
+    {
+      target_type: z.string(),
+      target_id: z.string(),
+      anchor: z
+        .object({
+          start_offset: z.number().optional(),
+          end_offset: z.number().optional(),
+          file_path: z.string().optional(),
+          line_number: z.number().optional(),
+        })
+        .optional(),
+    },
+    async ({ target_type, target_id, anchor }) => {
+      let parsedAnchor: Parameters<typeof listComments>[3];
+      if (anchor) {
+        if (anchor.file_path !== undefined && anchor.line_number !== undefined) {
+          parsedAnchor = { filePath: anchor.file_path, lineNumber: anchor.line_number };
+        } else if (anchor.start_offset !== undefined && anchor.end_offset !== undefined) {
+          parsedAnchor = { startOffset: anchor.start_offset, endOffset: anchor.end_offset };
+        }
+      }
+      const comments = await listComments(db, target_type, target_id, parsedAnchor);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(comments) }] };
+    }
+  );
+
+  server.tool(
+    'add_comment',
+    'Add a comment to a target (issue, document_section, or diff_line)',
+    {
+      target_type: z.string(),
+      target_id: z.string(),
+      body: z.string(),
+      anchor: z
+        .object({
+          start_offset: z.number().optional(),
+          end_offset: z.number().optional(),
+          file_path: z.string().optional(),
+          line_number: z.number().optional(),
+        })
+        .optional(),
+    },
+    async ({ target_type, target_id, body, anchor }) => {
+      const input: Parameters<typeof addComment>[1] = {
+        targetType: target_type,
+        targetId: target_id,
+        body,
+        authorLabel: agentLabel,
+        authorUserId: null,
+      };
+      if (anchor) {
+        if (anchor.file_path !== undefined) {
+          input.anchorFilePath = anchor.file_path;
+          input.anchorStart = anchor.line_number ?? null;
+        } else {
+          input.anchorStart = anchor.start_offset ?? null;
+          input.anchorEnd = anchor.end_offset ?? null;
+        }
+      }
+      const comment = await addComment(db, input);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(comment) }] };
+    }
+  );
+
+  return server;
+}

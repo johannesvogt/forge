@@ -8,17 +8,19 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test 'lib/**/*.test.ts'",
+    "test": "node --experimental-strip-types --test 'lib/**/*.test.ts' 'mcp/**/*.test.ts'",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
     "diff2html": "^3.4.56",
     "next": "^16.2.9",
     "next-auth": "^4.24.14",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

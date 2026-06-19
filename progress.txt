@@ -1,3 +1,14 @@
+2026-06-19 — Issue 10: MCP Gateway — Issues and Comments
+
+Foundational MCP server exposing issue tracker and comment system to agents via the Model Context Protocol.
+
+Deliverables:
+- package.json — @modelcontextprotocol/sdk ^1.29.0 and zod ^4.4.3 added; test script extended to 'lib/**/*.test.ts' 'mcp/**/*.test.ts'
+- mcp/server.ts — createMcpServer(db, agentLabel) factory; 7 tools: list_issues, get_issue, create_issue, update_issue, move_issue (state machine enforced), list_comments (anchor support), add_comment (agent author); thin translation layer over existing services
+- mcp/index.ts — StdioServerTransport entry point; validates MCP_API_KEY env var via findActiveApiKey; exits on missing/revoked key
+- mcp/server.test.ts — 15 TDD integration tests using InMemoryTransport + real PostgreSQL: list_issues all/filtered, create_issue defaults/column, get_issue found/not-found isError, update_issue, move_issue valid/invalid-transition isError, add_comment agent-author, list_comments chronological/empty, auth findActiveApiKey valid/invalid/empty
+- 161/161 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 9: Diff Line-Level Comments
 
 Line-level comments anchored to (file_path, line_number, diff_id) tuples in the diff viewer.

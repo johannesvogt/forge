@@ -163,6 +163,17 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 10 — MCP Gateway: Issues and Comments (completed 2026-06-19)
+
+Foundational MCP server giving agents access to the issue tracker and comment system via the Model Context Protocol.
+
+- **Dependencies**: Added `@modelcontextprotocol/sdk ^1.29.0` and `zod ^4.4.3` to package.json.
+- **MCP server factory** (`mcp/server.ts`): `createMcpServer(db, agentLabel)` builds an `McpServer` with 7 tools: `list_issues` (optional column filter), `get_issue`, `create_issue`, `update_issue`, `move_issue` (state machine enforced; invalid transitions returned as `isError`), `list_comments` (optional diff-line or document-section anchor), `add_comment` (records agentLabel as author, no userId). Thin translation layer — all business logic lives in existing services.
+- **Entry point** (`mcp/index.ts`): Stdio transport server. Reads `MCP_API_KEY` env var; calls `findActiveApiKey` to validate; exits with error on missing or revoked key. Connects authenticated `McpServer` to `StdioServerTransport`.
+- **TDD tests** (`mcp/server.test.ts`): 15 integration tests using `InMemoryTransport` + real PostgreSQL (pg pool). Covers: `list_issues` (all/column-filtered), `create_issue` (default column/specified column), `get_issue` (found/not-found isError), `update_issue`, `move_issue` (valid/invalid-transition isError), `add_comment` (agent author, no userId), `list_comments` (two comments chronological/empty target), `auth: findActiveApiKey` (valid key/invalid key/empty string).
+- **Test script**: Updated to `'lib/**/*.test.ts' 'mcp/**/*.test.ts'` to include MCP tests.
+- **Test count**: 161/161 pass; `tsc --noEmit` clean.
+
 ### Issue 8 — Diff Upload and View (completed 2026-06-19)
 
 Upload and view PR diffs as first-class immutable artifacts. Each diff carries structured metadata (title, description, branch) plus raw unified diff text. The viewer renders the diff with syntax highlighting via diff2html. Multiple diffs can be linked to one issue; re-uploading creates a new artifact, never mutates the first.
