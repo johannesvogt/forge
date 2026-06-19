@@ -214,6 +214,49 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         return r.rows[0];
       },
     },
+    diff: {
+      create: async ({
+        data,
+      }: {
+        data: {
+          title: string;
+          description: string;
+          branch: string;
+          diffText: string;
+          issueId: string;
+          authorUserId?: string | null;
+          authorLabel: string;
+        };
+      }) => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "Diff" (id, title, description, branch, "diffText", "issueId", "authorUserId", "authorLabel", "createdAt")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          [id, data.title, data.description, data.branch, data.diffText, data.issueId,
+           data.authorUserId ?? null, data.authorLabel, now]
+        );
+        return r.rows[0];
+      },
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const r = await pool.query(`SELECT * FROM "Diff" WHERE id = $1`, [where.id]);
+        return r.rows[0] ?? null;
+      },
+      findMany: async ({
+        where,
+        orderBy,
+      }: {
+        where: { issueId: string };
+        orderBy: { createdAt: 'asc' | 'desc' };
+      }) => {
+        const dir = orderBy.createdAt === 'desc' ? 'DESC' : 'ASC';
+        const r = await pool.query(
+          `SELECT * FROM "Diff" WHERE "issueId" = $1 ORDER BY "createdAt" ${dir}`,
+          [where.issueId]
+        );
+        return r.rows;
+      },
+    },
     apiKey: {
       findUnique: async ({ where }: { where: { keyHash: string } }) => {
         const r = await pool.query(`SELECT * FROM "ApiKey" WHERE "keyHash" = $1`, [where.keyHash]);
@@ -245,6 +288,7 @@ after(async () => {
   await pool.query(`DELETE FROM "Issue" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
   await pool.query(`DELETE FROM "Document" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
+  await pool.query(`DELETE FROM "Diff" WHERE "issueId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
   await pool.end();
 });
 
@@ -516,6 +560,203 @@ describe('list_docs', () => {
     });
     const docs = parseText(result);
     assert.deepEqual(docs, []);
+  });
+});
+
+describe('upload_diff', () => {
+  it('creates a diff and returns id, title, branch, diffText, authorLabel', async () => {
+    const result = await client.callTool({
+      name: 'upload_diff',
+      arguments: {
+        title: `${TEST_PREFIX}-diff-1`,
+        branch: 'feature/test',
+        diff_text: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-old\n+new',
+        issue_id: `${TEST_PREFIX}-diff-issue`,
+      },
+    });
+    const diff = parseText(result) as { id: string; title: string; branch: string; diffText: string; authorLabel: string };
+    assert.equal(diff.title, `${TEST_PREFIX}-diff-1`);
+    assert.equal(diff.branch, 'feature/test');
+    assert.ok(diff.diffText.includes('foo.ts'));
+    assert.equal(diff.authorLabel, AGENT_LABEL);
+    assert.ok(diff.id.length > 0);
+  });
+
+  it('stores optional description', async () => {
+    const result = await client.callTool({
+      name: 'upload_diff',
+      arguments: {
+        title: `${TEST_PREFIX}-diff-desc`,
+        description: 'A detailed diff',
+        branch: 'main',
+        diff_text: '--- a/bar.ts\n+++ b/bar.ts',
+        issue_id: `${TEST_PREFIX}-diff-issue`,
+      },
+    });
+    const diff = parseText(result) as { description: string };
+    assert.equal(diff.description, 'A detailed diff');
+  });
+});
+
+describe('get_diff', () => {
+  it('returns diff with all fields by id', async () => {
+    const uploaded = await client.callTool({
+      name: 'upload_diff',
+      arguments: {
+        title: `${TEST_PREFIX}-diff-get-1`,
+        branch: 'feature/get',
+        diff_text: 'diff content here',
+        issue_id: `${TEST_PREFIX}-diff-issue`,
+      },
+    });
+    const { id } = parseText(uploaded) as { id: string };
+
+    const result = await client.callTool({ name: 'get_diff', arguments: { id } });
+    const diff = parseText(result) as { id: string; title: string; diffText: string };
+    assert.equal(diff.id, id);
+    assert.equal(diff.title, `${TEST_PREFIX}-diff-get-1`);
+    assert.equal(diff.diffText, 'diff content here');
+  });
+
+  it('returns isError for unknown diff id', async () => {
+    const result = await client.callTool({ name: 'get_diff', arguments: { id: 'nonexistent-diff-xyz' } });
+    assert.equal((result as { isError?: boolean }).isError, true);
+  });
+});
+
+describe('list_diffs', () => {
+  it('returns diffs linked to an issue in chronological order', async () => {
+    const issueId = `${TEST_PREFIX}-list-diffs-issue`;
+    await client.callTool({
+      name: 'upload_diff',
+      arguments: { title: `${TEST_PREFIX}-list-diff-A`, branch: 'a', diff_text: 'diff A', issue_id: issueId },
+    });
+    await client.callTool({
+      name: 'upload_diff',
+      arguments: { title: `${TEST_PREFIX}-list-diff-B`, branch: 'b', diff_text: 'diff B', issue_id: issueId },
+    });
+
+    const result = await client.callTool({ name: 'list_diffs', arguments: { issue_id: issueId } });
+    const diffs = parseText(result) as Array<{ title: string }>;
+    assert.ok(Array.isArray(diffs));
+    assert.equal(diffs.length, 2);
+    assert.equal(diffs[0].title, `${TEST_PREFIX}-list-diff-A`);
+    assert.equal(diffs[1].title, `${TEST_PREFIX}-list-diff-B`);
+  });
+
+  it('returns empty array when no diffs for issue', async () => {
+    const result = await client.callTool({
+      name: 'list_diffs',
+      arguments: { issue_id: `${TEST_PREFIX}-no-diffs-issue` },
+    });
+    const diffs = parseText(result);
+    assert.deepEqual(diffs, []);
+  });
+
+  it('does not return diffs from other issues', async () => {
+    const issueA = `${TEST_PREFIX}-isolation-diff-issue-A`;
+    const issueB = `${TEST_PREFIX}-isolation-diff-issue-B`;
+    await client.callTool({
+      name: 'upload_diff',
+      arguments: { title: `${TEST_PREFIX}-isolation-diff`, branch: 'x', diff_text: 'x', issue_id: issueA },
+    });
+
+    const result = await client.callTool({ name: 'list_diffs', arguments: { issue_id: issueB } });
+    const diffs = parseText(result) as Array<unknown>;
+    assert.deepEqual(diffs, []);
+  });
+});
+
+describe('add_comment and list_comments on diff lines', () => {
+  it('adds a diff line comment with anchor and returns it', async () => {
+    const uploaded = await client.callTool({
+      name: 'upload_diff',
+      arguments: {
+        title: `${TEST_PREFIX}-diff-line-comment`,
+        branch: 'feature/comments',
+        diff_text: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-old\n+new',
+        issue_id: `${TEST_PREFIX}-diff-comment-issue`,
+      },
+    });
+    const { id: diffId } = parseText(uploaded) as { id: string };
+
+    const result = await client.callTool({
+      name: 'add_comment',
+      arguments: {
+        target_type: 'diff_line',
+        target_id: diffId,
+        body: 'This line needs attention.',
+        anchor: { file_path: 'foo.ts', line_number: 5 },
+      },
+    });
+    const comment = parseText(result) as {
+      targetType: string; targetId: string; body: string; anchorFilePath: string | null;
+    };
+    assert.equal(comment.targetType, 'diff_line');
+    assert.equal(comment.targetId, diffId);
+    assert.equal(comment.body, 'This line needs attention.');
+    assert.equal(comment.anchorFilePath, 'foo.ts');
+  });
+
+  it('list_comments returns only comments for the specific anchor', async () => {
+    const uploaded = await client.callTool({
+      name: 'upload_diff',
+      arguments: {
+        title: `${TEST_PREFIX}-diff-anchor-filter`,
+        branch: 'feature/anchor',
+        diff_text: 'diff',
+        issue_id: `${TEST_PREFIX}-diff-anchor-issue`,
+      },
+    });
+    const { id: diffId } = parseText(uploaded) as { id: string };
+
+    await client.callTool({
+      name: 'add_comment',
+      arguments: { target_type: 'diff_line', target_id: diffId, body: 'Line 3 comment', anchor: { file_path: 'main.ts', line_number: 3 } },
+    });
+    await client.callTool({
+      name: 'add_comment',
+      arguments: { target_type: 'diff_line', target_id: diffId, body: 'Line 7 comment', anchor: { file_path: 'main.ts', line_number: 7 } },
+    });
+
+    const result = await client.callTool({
+      name: 'list_comments',
+      arguments: {
+        target_type: 'diff_line',
+        target_id: diffId,
+        anchor: { file_path: 'main.ts', line_number: 3 },
+      },
+    });
+    const comments = parseText(result) as Array<{ body: string }>;
+    assert.ok(Array.isArray(comments));
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0].body, 'Line 3 comment');
+  });
+
+  it('comments from a second diff do not appear on the first diff', async () => {
+    const issueId = `${TEST_PREFIX}-diff-isolation-issue`;
+    const diff1Result = await client.callTool({
+      name: 'upload_diff',
+      arguments: { title: `${TEST_PREFIX}-diff-iso-1`, branch: 'x', diff_text: 'x', issue_id: issueId },
+    });
+    const diff2Result = await client.callTool({
+      name: 'upload_diff',
+      arguments: { title: `${TEST_PREFIX}-diff-iso-2`, branch: 'y', diff_text: 'y', issue_id: issueId },
+    });
+    const { id: diff1Id } = parseText(diff1Result) as { id: string };
+    const { id: diff2Id } = parseText(diff2Result) as { id: string };
+
+    await client.callTool({
+      name: 'add_comment',
+      arguments: { target_type: 'diff_line', target_id: diff2Id, body: 'Belongs to diff2', anchor: { file_path: 'a.ts', line_number: 1 } },
+    });
+
+    const result = await client.callTool({
+      name: 'list_comments',
+      arguments: { target_type: 'diff_line', target_id: diff1Id },
+    });
+    const comments = parseText(result) as Array<unknown>;
+    assert.deepEqual(comments, []);
   });
 });
 

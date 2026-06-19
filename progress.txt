@@ -1,3 +1,12 @@
+2026-06-19 — Issue 12: MCP Gateway — Diffs
+
+Extended MCP server with three diff tools and verified diff line comment support end-to-end via the existing add_comment/list_comments tools.
+
+Deliverables:
+- mcp/server.ts — three new tools: upload_diff(title, description?, branch, diff_text, issue_id), get_diff(id), list_diffs(issue_id); thin wrappers over existing diff-service functions; agent label recorded as authorLabel
+- mcp/server.test.ts — makePgClient extended with diff table implementation (create/findUnique/findMany); after() extended to delete test diffs; 10 new TDD integration tests: upload_diff (id/title/branch/diffText/authorLabel returned, optional description stored), get_diff (all fields returned, isError on unknown id), list_diffs (chronological order, empty array, isolation across issues), add_comment/list_comments on diff lines (anchor stored, filtered by file_path/line_number, isolation across diffs)
+- 179/179 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 11: MCP Gateway — Documents
 
 Extended MCP server with four document tools so agents can manage the full document lifecycle.

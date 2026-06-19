@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createIssue, listIssues, getIssue, updateIssue, moveIssue } from '../lib/issues/issue-service.ts';
 import { addComment, listComments } from '../lib/comments/comment-service.ts';
 import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
+import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,6 +198,51 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     async ({ issue_id }) => {
       const docs = await listDocumentsByIssue(db, issue_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(docs) }] };
+    }
+  );
+
+  server.tool(
+    'upload_diff',
+    'Upload a diff artifact linked to an issue',
+    {
+      title: z.string(),
+      description: z.string().optional(),
+      branch: z.string(),
+      diff_text: z.string(),
+      issue_id: z.string(),
+    },
+    async ({ title, description, branch, diff_text, issue_id }) => {
+      const diff = await uploadDiff(db, {
+        title,
+        description,
+        branch,
+        diffText: diff_text,
+        issueId: issue_id,
+        authorLabel: agentLabel,
+        authorUserId: null,
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(diff) }] };
+    }
+  );
+
+  server.tool(
+    'get_diff',
+    'Get a diff artifact by ID',
+    { id: z.string() },
+    async ({ id }) => {
+      const diff = await getDiff(db, id);
+      if (!diff) throw new Error(`Diff not found: ${id}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(diff) }] };
+    }
+  );
+
+  server.tool(
+    'list_diffs',
+    'List diff artifacts linked to an issue',
+    { issue_id: z.string() },
+    async ({ issue_id }) => {
+      const diffs = await listDiffsByIssue(db, issue_id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(diffs) }] };
     }
   );
 

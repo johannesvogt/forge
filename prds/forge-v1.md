@@ -163,6 +163,14 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 12 — MCP Gateway: Diffs (completed 2026-06-19)
+
+Extended the MCP server with three diff tools and validated the existing `add_comment` / `list_comments` anchor handling for `diff_line` targets.
+
+- **MCP tools added** (`mcp/server.ts`): Imported `uploadDiff`, `getDiff`, `listDiffsByIssue` from `lib/diffs/diff-service.ts`. Added three tools: `upload_diff(title, description?, branch, diff_text, issue_id)` — uploads a diff artifact linked to an issue, records agentLabel as authorLabel; `get_diff(id)` — returns full diff with metadata and raw diff text, throws isError on missing; `list_diffs(issue_id)` — returns all diffs for an issue in chronological order.
+- **TDD tests** (`mcp/server.test.ts`): Extended `makePgClient` with a `diff` table implementation (create, findUnique, findMany). Added diff cleanup to `after()`. Added 10 new integration tests across 4 suites: `upload_diff` (returns id/title/branch/diffText/authorLabel, stores optional description); `get_diff` (returns all fields by id, isError on unknown id); `list_diffs` (chronological order, empty array, isolation across issues); `add_comment and list_comments on diff lines` (adds diff line comment with file_path anchor, list_comments filters by anchor, isolation across diffs).
+- **Test count**: 179/179 pass; `tsc --noEmit` clean.
+
 ### Issue 11 — MCP Gateway: Documents (completed 2026-06-19)
 
 Extended the MCP server with four document tools, giving agents full document lifecycle management through MCP.
