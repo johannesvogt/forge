@@ -54,6 +54,15 @@ interface LinkedDocument {
   updatedAt: string;
 }
 
+interface LinkedDiff {
+  id: string;
+  title: string;
+  description: string;
+  branch: string;
+  authorLabel: string;
+  createdAt: string;
+}
+
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -76,6 +85,15 @@ export default function IssueDetailPage() {
   const [docContent, setDocContent] = useState('');
   const [docSubmitting, setDocSubmitting] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
+
+  const [diffs, setDiffs] = useState<LinkedDiff[]>([]);
+  const [showDiffForm, setShowDiffForm] = useState(false);
+  const [diffTitle, setDiffTitle] = useState('');
+  const [diffDescription, setDiffDescription] = useState('');
+  const [diffBranch, setDiffBranch] = useState('');
+  const [diffText, setDiffText] = useState('');
+  const [diffSubmitting, setDiffSubmitting] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
 
   const fetchIssue = useCallback(async () => {
     try {
@@ -110,11 +128,22 @@ export default function IssueDetailPage() {
     }
   }, [id]);
 
+  const fetchDiffs = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/issues/${id}/diffs`);
+      if (!res.ok) return;
+      setDiffs(await res.json());
+    } catch {
+      // non-critical — diffs fail silently
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchIssue();
     fetchComments();
     fetchDocuments();
-  }, [fetchIssue, fetchComments, fetchDocuments]);
+    fetchDiffs();
+  }, [fetchIssue, fetchComments, fetchDocuments, fetchDiffs]);
 
   async function handleMove(target: ColumnId) {
     if (!issue) return;
@@ -321,6 +350,129 @@ export default function IssueDetailPage() {
                 className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
                 {docSubmitting ? 'Creating…' : 'Create Document'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Diffs section */}
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Diffs {diffs.length > 0 && <span className="text-gray-400">({diffs.length})</span>}
+          </h2>
+          <button
+            onClick={() => setShowDiffForm((v) => !v)}
+            className="text-xs text-indigo-600 hover:underline"
+          >
+            {showDiffForm ? 'Cancel' : '+ Upload Diff'}
+          </button>
+        </div>
+
+        {diffs.length === 0 && !showDiffForm && (
+          <p className="text-sm text-gray-400 italic">No diffs yet.</p>
+        )}
+
+        {diffs.length > 0 && (
+          <div className="space-y-2">
+            {diffs.map((diff) => (
+              <Link
+                key={diff.id}
+                href={`/diffs/${diff.id}`}
+                className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-indigo-300 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-gray-800">{diff.title}</span>
+                  <span className="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-mono text-gray-600">{diff.branch}</span>
+                </div>
+                {diff.description && (
+                  <p className="mt-0.5 text-xs text-gray-500 line-clamp-1">{diff.description}</p>
+                )}
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {diff.authorLabel} · {new Date(diff.createdAt).toLocaleString()}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {showDiffForm && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!diffTitle.trim() || !diffBranch.trim()) return;
+              setDiffSubmitting(true);
+              setDiffError(null);
+              try {
+                const res = await fetch('/api/diffs', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: diffTitle.trim(),
+                    description: diffDescription,
+                    branch: diffBranch.trim(),
+                    diffText,
+                    issueId: id,
+                  }),
+                });
+                if (!res.ok) {
+                  const data = await res.json();
+                  throw new Error(data.error ?? 'Failed to upload diff');
+                }
+                const newDiff: LinkedDiff = await res.json();
+                setDiffs((prev) => [...prev, newDiff]);
+                setDiffTitle('');
+                setDiffDescription('');
+                setDiffBranch('');
+                setDiffText('');
+                setShowDiffForm(false);
+              } catch (e) {
+                setDiffError(e instanceof Error ? e.message : 'Unknown error');
+              } finally {
+                setDiffSubmitting(false);
+              }
+            }}
+            className="mt-3 space-y-2"
+          >
+            <input
+              type="text"
+              value={diffTitle}
+              onChange={(e) => setDiffTitle(e.target.value)}
+              placeholder="Title…"
+              required
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <input
+              type="text"
+              value={diffBranch}
+              onChange={(e) => setDiffBranch(e.target.value)}
+              placeholder="Branch name…"
+              required
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <input
+              type="text"
+              value={diffDescription}
+              onChange={(e) => setDiffDescription(e.target.value)}
+              placeholder="Description (optional)…"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <textarea
+              value={diffText}
+              onChange={(e) => setDiffText(e.target.value)}
+              placeholder="Paste unified diff here…"
+              rows={8}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            {diffError && <p className="text-xs text-red-600">{diffError}</p>}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={diffSubmitting || !diffTitle.trim() || !diffBranch.trim()}
+                className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {diffSubmitting ? 'Uploading…' : 'Upload Diff'}
               </button>
             </div>
           </form>

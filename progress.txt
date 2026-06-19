@@ -1,3 +1,18 @@
+2026-06-19 — Issue 8: Diff Upload and View
+
+Upload and view PR diffs as immutable first-class artifacts.
+
+Deliverables:
+- prisma/schema.prisma — Diff model added (id, title, description, branch, diffText, issueId, authorUserId?, authorLabel, createdAt); db push + client regenerated
+- lib/diffs/diff-service.ts — Diff interface; uploadDiff, getDiff, listDiffsByIssue; Db interface for testability
+- lib/diffs/diff-service.test.ts — 10 TDD integration tests (upload with all fields, agent author, default description, immutability, getDiff full fields, getDiff null on missing, listDiffsByIssue chronological order/empty/isolation/multiple artifacts)
+- app/api/diffs/route.ts — POST upload diff (dual auth: human session or agent Bearer; validates title/branch/diffText/issueId; 201)
+- app/api/diffs/[id]/route.ts — GET diff detail (human session; 404 on missing)
+- app/api/issues/[id]/diffs/route.ts — GET list diffs for issue (human session; 404 if issue missing)
+- app/board/[id]/page.tsx — Diffs section with upload form; optimistic append; links to viewer
+- app/diffs/[id]/page.tsx — Diff viewer: metadata header, diff body rendered via diff2html (line-by-line, local CSS bundle)
+- 142/142 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 7: Document Inline Comments
 
 Inline comments anchored to character offset ranges within specific document versions.

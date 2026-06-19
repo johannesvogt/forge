@@ -163,6 +163,18 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 8 — Diff Upload and View (completed 2026-06-19)
+
+Upload and view PR diffs as first-class immutable artifacts. Each diff carries structured metadata (title, description, branch) plus raw unified diff text. The viewer renders the diff with syntax highlighting via diff2html. Multiple diffs can be linked to one issue; re-uploading creates a new artifact, never mutates the first.
+
+- **Prisma schema** (`prisma/schema.prisma`): Added `Diff` model with `id`, `title`, `description`, `branch`, `diffText`, `issueId`, `authorUserId?`, `authorLabel`, `createdAt`. Schema pushed and client regenerated.
+- **Diff service** (`lib/diffs/diff-service.ts`): `Diff` interface; `UploadDiffInput`; `Db` interface for testability; `uploadDiff` (creates diff record), `getDiff` (returns by id or null), `listDiffsByIssue` (returns in chronological order).
+- **TDD tests** (`lib/diffs/diff-service.test.ts`): 10 integration tests across 3 suites: `uploadDiff` (creates with all fields, agent author, default empty description, immutability check); `getDiff` (returns full fields, null on missing); `listDiffsByIssue` (chronological order, empty list, isolation by issueId, multiple artifacts per issue).
+- **API routes**: `POST /api/diffs` (dual auth: human session or agent Bearer; validates title/branch/diffText/issueId; returns 201). `GET /api/diffs/[id]` (human session; 404 on missing). `GET /api/issues/[id]/diffs` (human session; 404 if issue missing).
+- **Issue detail UI** (`app/board/[id]/page.tsx`): Diffs section between Documents and Comments; fetches diffs on load; "+ Upload Diff" inline form with title, branch, description, and diff textarea; optimistic append on submit; each diff links to viewer showing branch name, author, and timestamp.
+- **Diff viewer** (`app/diffs/[id]/page.tsx`): Fetches diff by id; renders metadata header (title, branch badge, description, author, timestamp); diff body rendered via `diff2html` (`html()` imported dynamically) with line-by-line output format and local CSS bundle; back-link to parent issue.
+- **Test count**: 142/142 pass; `tsc --noEmit` clean.
+
 ### Issue 7 — Document Inline Comments (completed 2026-06-19)
 
 Inline comments anchored to character offset ranges in specific document versions. Commented sections are highlighted in the viewer; clicking reveals the thread. Humans can resolve comments.

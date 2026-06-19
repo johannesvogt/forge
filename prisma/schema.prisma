@@ -78,3 +78,15 @@ model DocumentIssueLink {
 
   @@id([documentId, issueId])
 }
+
+model Diff {
+  id           String   @id @default(cuid())
+  title        String
+  description  String   @default("")
+  branch       String
+  diffText     String
+  issueId      String
+  authorUserId String?
+  authorLabel  String
+  createdAt    DateTime @default(now())
+}
