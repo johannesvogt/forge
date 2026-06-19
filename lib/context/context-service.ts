@@ -1,5 +1,6 @@
 export interface ProjectContext {
   id: string;
+  projectId: string;
   content: string;
   authorLabel: string;
   authorUserId: string | null;
@@ -20,33 +21,33 @@ export interface UpdateContextResult {
 interface Db {
   projectContext: {
     upsert(args: {
-      where: { id: string };
-      create: { id: string; content: string; authorLabel: string; authorUserId: string | null };
+      where: { projectId: string };
+      create: { projectId: string; content: string; authorLabel: string; authorUserId: string | null };
       update: { content: string; authorLabel: string; authorUserId: string | null; updatedAt: Date };
     }): Promise<ProjectContext>;
-    findUnique(args: { where: { id: string } }): Promise<ProjectContext | null>;
+    findUnique(args: { where: { projectId: string } }): Promise<ProjectContext | null>;
   };
 }
 
-const SINGLETON_ID = 'singleton';
 const TOKEN_WARNING_THRESHOLD = 1000;
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-export async function getProjectContext(db: Db): Promise<ProjectContext | null> {
-  return db.projectContext.findUnique({ where: { id: SINGLETON_ID } });
+export async function getProjectContext(db: Db, projectId: string): Promise<ProjectContext | null> {
+  return db.projectContext.findUnique({ where: { projectId } });
 }
 
 export async function updateProjectContext(
   db: Db,
+  projectId: string,
   input: UpdateContextInput
 ): Promise<UpdateContextResult> {
   const context = await db.projectContext.upsert({
-    where: { id: SINGLETON_ID },
+    where: { projectId },
     create: {
-      id: SINGLETON_ID,
+      projectId,
       content: input.content,
       authorLabel: input.authorLabel,
       authorUserId: input.authorUserId ?? null,

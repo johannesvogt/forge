@@ -23,9 +23,11 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid column' }, { status: 400 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
   try {
-    const issue = await moveIssue(prisma as any, id, body.column as Column);
+    const issue = await moveIssue(prisma as any, projectId, id, body.column as Column);
     return NextResponse.json(issue);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

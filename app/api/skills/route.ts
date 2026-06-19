@@ -8,7 +8,9 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const skills = await listSkills(prisma as any);
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
+  const skills = await listSkills(prisma as any, projectId);
   return NextResponse.json(skills);
 }
 
@@ -21,7 +23,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
 
-  const skill = await createSkill(prisma as any, {
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
+  const skill = await createSkill(prisma as any, projectId, {
     name: body.name.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,
     prompt: typeof body.prompt === 'string' ? body.prompt : undefined,

@@ -9,7 +9,7 @@ import { getProjectContext, updateProjectContext } from '../lib/context/context-
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createMcpServer(db: any, agentLabel: string): McpServer {
+export function createMcpServer(db: any, agentLabel: string, projectId: string): McpServer {
   const server = new McpServer({ name: 'forge-mcp', version: '1.0.0' });
 
   server.tool(
@@ -17,7 +17,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'List issues, optionally filtered by column',
     { column: z.string().optional() },
     async ({ column }) => {
-      const issues = await listIssues(db, column);
+      const issues = await listIssues(db, projectId, column);
       return { content: [{ type: 'text' as const, text: JSON.stringify(issues) }] };
     }
   );
@@ -27,7 +27,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'Get a single issue by ID',
     { id: z.string() },
     async ({ id }) => {
-      const issue = await getIssue(db, id);
+      const issue = await getIssue(db, projectId, id);
       if (!issue) throw new Error(`Issue not found: ${id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
     }
@@ -42,7 +42,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       column: z.string().optional(),
     },
     async ({ title, description, column }) => {
-      const issue = await createIssue(db, { title, description, column });
+      const issue = await createIssue(db, projectId, { title, description, column });
       return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
     }
   );
@@ -56,7 +56,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       description: z.string().optional(),
     },
     async ({ id, title, description }) => {
-      const issue = await updateIssue(db, id, { title, description });
+      const issue = await updateIssue(db, projectId, id, { title, description });
       return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
     }
   );
@@ -69,7 +69,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       column: z.string(),
     },
     async ({ id, column }) => {
-      const issue = await moveIssue(db, id, column as Column);
+      const issue = await moveIssue(db, projectId, id, column as Column);
       return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
     }
   );
@@ -150,7 +150,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       issue_id: z.string(),
     },
     async ({ title, content, issue_id }) => {
-      const doc = await createDocument(db, {
+      const doc = await createDocument(db, projectId, {
         title,
         content,
         issueId: issue_id,
@@ -170,8 +170,8 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     },
     async ({ id, version }) => {
       const doc = version !== undefined
-        ? await getDocumentAtVersion(db, id, version)
-        : await getDocument(db, id);
+        ? await getDocumentAtVersion(db, projectId, id, version)
+        : await getDocument(db, projectId, id);
       if (!doc) throw new Error(`Document not found: ${id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
     }
@@ -185,7 +185,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       content: z.string(),
     },
     async ({ id, content }) => {
-      const doc = await updateDocument(db, id, { content, authorLabel: agentLabel, authorUserId: null });
+      const doc = await updateDocument(db, projectId, id, { content, authorLabel: agentLabel, authorUserId: null });
       if (!doc) throw new Error(`Document not found: ${id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
     }
@@ -198,7 +198,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       issue_id: z.string(),
     },
     async ({ issue_id }) => {
-      const docs = await listDocumentsByIssue(db, issue_id);
+      const docs = await listDocumentsByIssue(db, projectId, issue_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(docs) }] };
     }
   );
@@ -214,7 +214,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
       issue_id: z.string(),
     },
     async ({ title, description, branch, diff_text, issue_id }) => {
-      const diff = await uploadDiff(db, {
+      const diff = await uploadDiff(db, projectId, {
         title,
         description,
         branch,
@@ -232,7 +232,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'Get a diff artifact by ID',
     { id: z.string() },
     async ({ id }) => {
-      const diff = await getDiff(db, id);
+      const diff = await getDiff(db, projectId, id);
       if (!diff) throw new Error(`Diff not found: ${id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(diff) }] };
     }
@@ -243,7 +243,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'List diff artifacts linked to an issue',
     { issue_id: z.string() },
     async ({ issue_id }) => {
-      const diffs = await listDiffsByIssue(db, issue_id);
+      const diffs = await listDiffsByIssue(db, projectId, issue_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(diffs) }] };
     }
   );
@@ -253,7 +253,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'List all available skills with their names and descriptions',
     {},
     async () => {
-      const skills = await listSkills(db);
+      const skills = await listSkills(db, projectId);
       return {
         content: [
           {
@@ -270,7 +270,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'Get a skill by name, returning its primary prompt and all supporting files',
     { name: z.string() },
     async ({ name }) => {
-      const result = await getSkillWithFiles(db, name);
+      const result = await getSkillWithFiles(db, projectId, name);
       if (!result) throw new Error(`Skill not found: ${name}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     }
@@ -281,7 +281,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'Get the current project context (CONTEXT.md). Load this at session start for project orientation.',
     {},
     async () => {
-      const ctx = await getProjectContext(db);
+      const ctx = await getProjectContext(db, projectId);
       const content = ctx?.content ?? '';
       return { content: [{ type: 'text' as const, text: content }] };
     }
@@ -292,7 +292,7 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     'Replace the project context with new content. Returns a warning if content exceeds 1000 tokens, but still saves.',
     { content: z.string() },
     async ({ content }) => {
-      const { context, warning } = await updateProjectContext(db, {
+      const { context, warning } = await updateProjectContext(db, projectId, {
         content,
         authorLabel: agentLabel,
         authorUserId: null,

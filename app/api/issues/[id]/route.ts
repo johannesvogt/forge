@@ -13,8 +13,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, id);
+  const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   return NextResponse.json(issue);
@@ -29,14 +31,16 @@ export async function PATCH(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, id);
+  const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
 
-  const updated = await updateIssue(prisma as any, id, {
+  const updated = await updateIssue(prisma as any, projectId, id, {
     title: typeof body.title === 'string' ? body.title.trim() : undefined,
     description: typeof body.description === 'string' ? body.description : undefined,
   });

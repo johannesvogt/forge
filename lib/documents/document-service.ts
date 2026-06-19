@@ -4,6 +4,7 @@ export interface Document {
   content: string;
   versionNumber: number;
   versionId: string;
+  projectId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +20,7 @@ export interface DocumentVersionSummary {
 interface RawDocument {
   id: string;
   title: string;
+  projectId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,8 +45,9 @@ interface CreateInput {
 
 interface Db {
   document: {
-    create(args: { data: { title: string } }): Promise<RawDocument>;
+    create(args: { data: { title: string; projectId: string } }): Promise<RawDocument>;
     findUnique(args: { where: { id: string } }): Promise<RawDocument | null>;
+    findMany(args: { where: { projectId: string } }): Promise<RawDocument[]>;
     update(args: { where: { id: string }; data: { updatedAt: Date } }): Promise<RawDocument>;
   };
   documentVersion: {
@@ -75,8 +78,8 @@ interface Db {
   };
 }
 
-export async function createDocument(db: Db, input: CreateInput): Promise<Document> {
-  const doc = await db.document.create({ data: { title: input.title } });
+export async function createDocument(db: Db, projectId: string, input: CreateInput): Promise<Document> {
+  const doc = await db.document.create({ data: { title: input.title, projectId } });
   const version = await db.documentVersion.create({
     data: {
       documentId: doc.id,
@@ -96,14 +99,15 @@ export async function createDocument(db: Db, input: CreateInput): Promise<Docume
     content: version.content,
     versionNumber: version.versionNumber,
     versionId: version.id,
+    projectId: doc.projectId,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
 }
 
-export async function getDocument(db: Db, id: string): Promise<Document | null> {
+export async function getDocument(db: Db, projectId: string, id: string): Promise<Document | null> {
   const doc = await db.document.findUnique({ where: { id } });
-  if (!doc) return null;
+  if (!doc || doc.projectId !== projectId) return null;
   const version = await db.documentVersion.findFirst({
     where: { documentId: id },
     orderBy: { versionNumber: 'desc' },
@@ -115,6 +119,7 @@ export async function getDocument(db: Db, id: string): Promise<Document | null> 
     content: version.content,
     versionNumber: version.versionNumber,
     versionId: version.id,
+    projectId: doc.projectId,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -122,11 +127,12 @@ export async function getDocument(db: Db, id: string): Promise<Document | null> 
 
 export async function getDocumentAtVersion(
   db: Db,
+  projectId: string,
   id: string,
   versionNumber: number
 ): Promise<Document | null> {
   const doc = await db.document.findUnique({ where: { id } });
-  if (!doc) return null;
+  if (!doc || doc.projectId !== projectId) return null;
   const version = await db.documentVersion.findFirst({
     where: { documentId: id, versionNumber },
     orderBy: { versionNumber: 'desc' },
@@ -138,6 +144,7 @@ export async function getDocumentAtVersion(
     content: version.content,
     versionNumber: version.versionNumber,
     versionId: version.id,
+    projectId: doc.projectId,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -145,11 +152,12 @@ export async function getDocumentAtVersion(
 
 export async function updateDocument(
   db: Db,
+  projectId: string,
   id: string,
   input: { content: string; authorUserId?: string | null; authorLabel: string }
 ): Promise<Document | null> {
   const doc = await db.document.findUnique({ where: { id } });
-  if (!doc) return null;
+  if (!doc || doc.projectId !== projectId) return null;
 
   const latest = await db.documentVersion.findFirst({
     where: { documentId: id },
@@ -176,6 +184,7 @@ export async function updateDocument(
     content: version.content,
     versionNumber: version.versionNumber,
     versionId: version.id,
+    projectId: updatedDoc.projectId,
     createdAt: updatedDoc.createdAt,
     updatedAt: updatedDoc.updatedAt,
   };
@@ -183,8 +192,11 @@ export async function updateDocument(
 
 export async function listDocumentVersions(
   db: Db,
+  projectId: string,
   id: string
 ): Promise<DocumentVersionSummary[]> {
+  const doc = await db.document.findUnique({ where: { id } });
+  if (!doc || doc.projectId !== projectId) return [];
   const versions = await db.documentVersion.findMany({
     where: { documentId: id },
     orderBy: { versionNumber: 'asc' },
@@ -200,12 +212,13 @@ export async function listDocumentVersions(
 
 export async function diffDocumentVersions(
   db: Db,
+  projectId: string,
   id: string,
   fromVersion: number,
   toVersion: number
 ): Promise<string | null> {
   const doc = await db.document.findUnique({ where: { id } });
-  if (!doc) return null;
+  if (!doc || doc.projectId !== projectId) return null;
 
   const [from, to] = await Promise.all([
     db.documentVersion.findFirst({ where: { documentId: id, versionNumber: fromVersion }, orderBy: { versionNumber: 'desc' } }),
@@ -217,13 +230,15 @@ export async function diffDocumentVersions(
   return computeUnifiedDiff(from.content, to.content, `v${fromVersion}`, `v${toVersion}`);
 }
 
-export async function listDocumentsByIssue(db: Db, issueId: string): Promise<Document[]> {
+export async function listDocumentsByIssue(db: Db, projectId: string, issueId: string): Promise<Document[]> {
   const links = await db.documentIssueLink.findMany({ where: { issueId } });
-  const docs = await Promise.all(links.map((l) => getDocument(db, l.documentId)));
+  const docs = await Promise.all(links.map((l) => getDocument(db, projectId, l.documentId)));
   return docs.filter((d): d is Document => d !== null);
 }
 
-export async function linkDocumentToIssue(db: Db, documentId: string, issueId: string): Promise<void> {
+export async function linkDocumentToIssue(db: Db, projectId: string, documentId: string, issueId: string): Promise<void> {
+  const doc = await db.document.findUnique({ where: { id: documentId } });
+  if (!doc || doc.projectId !== projectId) return;
   await db.documentIssueLink.createMany({
     data: [{ documentId, issueId }],
     skipDuplicates: true,

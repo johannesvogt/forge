@@ -1,3 +1,13 @@
+2026-06-19 Issue #18 — Domain services project scoping
+  - Updated issue-service, document-service, diff-service, skill-service, context-service: all public functions gained projectId as 2nd param; all DB queries scoped by projectId.
+  - context-service: removed singleton pattern; switched to per-project upsert via ON CONFLICT ("projectId").
+  - skill-service.getSkillByName: uses compound unique key { projectId_name: { projectId, name } }.
+  - Cross-project isolation tests added to every service (data in project A not visible from project B).
+  - mcp/server.ts: createMcpServer(db, agentLabel, projectId) — projectId fixed at startup, passed to all service calls.
+  - mcp/index.ts: extracts projectId from findActiveApiKey; exits with error if projectId is falsy.
+  - 17 API route files updated with const projectId = '' placeholder + TODO(issue #20) comment.
+  - 237 integration tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-19 Issue #17 — Project-scoped API keys
   - Updated createApiKey signature: added required projectId parameter, passed to Prisma INSERT.
   - Updated findActiveApiKey: now returns { userId, label, projectId }.

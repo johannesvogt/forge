@@ -33,12 +33,14 @@ export async function GET(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
 
-  const doc = await getDocument(prisma as any, id);
+  const doc = await getDocument(prisma as any, projectId, id);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const versions = await listDocumentVersions(prisma as any, id);
+  const versions = await listDocumentVersions(prisma as any, projectId, id);
   return NextResponse.json(versions);
 }
 
@@ -49,6 +51,8 @@ export async function POST(
   const author = await resolveAuthor(request);
   if (!author) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
 
   const body = await request.json().catch(() => null);
@@ -56,7 +60,7 @@ export async function POST(
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
   }
 
-  const doc = await updateDocument(prisma as any, id, {
+  const doc = await updateDocument(prisma as any, projectId, id, {
     content: body.content,
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,

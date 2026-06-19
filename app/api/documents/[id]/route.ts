@@ -11,6 +11,8 @@ export async function GET(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
   const versionParam = request.nextUrl.searchParams.get('version');
 
@@ -19,12 +21,12 @@ export async function GET(
     if (isNaN(versionNumber) || versionNumber < 1) {
       return NextResponse.json({ error: 'Invalid version number' }, { status: 400 });
     }
-    const doc = await getDocumentAtVersion(prisma as any, id, versionNumber);
+    const doc = await getDocumentAtVersion(prisma as any, projectId, id, versionNumber);
     if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(doc);
   }
 
-  const doc = await getDocument(prisma as any, id);
+  const doc = await getDocument(prisma as any, projectId, id);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   return NextResponse.json(doc);

@@ -13,8 +13,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const diff = await getDiff(prisma as any, id);
+  const diff = await getDiff(prisma as any, projectId, id);
   if (!diff) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   return NextResponse.json(diff);

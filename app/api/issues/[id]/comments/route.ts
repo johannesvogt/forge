@@ -40,8 +40,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, id);
+  const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const comments = await listComments(prisma as any, 'issue', id);
@@ -57,8 +59,10 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, id);
+  const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await request.json().catch(() => null);

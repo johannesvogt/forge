@@ -47,7 +47,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const diff = await uploadDiff(prisma as any, {
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
+  const diff = await uploadDiff(prisma as any, projectId, {
     title: body.title.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,
     branch: body.branch.trim(),

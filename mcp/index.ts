@@ -18,6 +18,12 @@ if (!agent) {
   process.exit(1);
 }
 
-const server = createMcpServer(prisma, agent.label);
+if (!agent.projectId) {
+  process.stderr.write('API key has no associated project\n');
+  await prisma.$disconnect();
+  process.exit(1);
+}
+
+const server = createMcpServer(prisma, agent.label, agent.projectId);
 const transport = new StdioServerTransport();
 await server.connect(transport);

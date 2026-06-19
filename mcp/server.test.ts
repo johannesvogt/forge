@@ -17,21 +17,28 @@ const AGENT_LABEL = `${TEST_PREFIX}-agent`;
 
 const TEST_DOC_ISSUE_ID = `${TEST_PREFIX}-doc-issue`;
 
+let testUserId: string;
+let testProjectId: string;
+
 function makePgClient(pool: InstanceType<typeof Pool>) {
   return {
     document: {
-      create: async ({ data }: { data: { title: string } }) => {
+      create: async ({ data }: { data: { title: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Document" (id, title, "createdAt", "updatedAt") VALUES ($1,$2,$3,$3) RETURNING *`,
-          [id, data.title, now]
+          `INSERT INTO "Document" (id, title, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$4) RETURNING *`,
+          [id, data.title, data.projectId, now]
         );
         return r.rows[0];
       },
       findUnique: async ({ where }: { where: { id: string } }) => {
         const r = await pool.query(`SELECT * FROM "Document" WHERE id = $1`, [where.id]);
         return r.rows[0] ?? null;
+      },
+      findMany: async ({ where }: { where: { projectId: string } }) => {
+        const r = await pool.query(`SELECT * FROM "Document" WHERE "projectId" = $1`, [where.projectId]);
+        return r.rows;
       },
       update: async ({ where, data }: { where: { id: string }; data: { updatedAt: Date } }) => {
         const r = await pool.query(
@@ -130,35 +137,52 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
       },
     },
     issue: {
-      create: async ({ data }: { data: { title: string; description?: string; column?: string } }) => {
+      create: async ({ data }: { data: { title: string; description?: string; column?: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Issue" (id, title, description, "column", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$5) RETURNING *`,
-          [id, data.title, data.description ?? '', data.column ?? 'BACKLOG', now]
+          `INSERT INTO "Issue" (id, title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING *`,
+          [id, data.title, data.description ?? '', data.column ?? 'BACKLOG', data.projectId, now]
         );
         return r.rows[0];
       },
-      findMany: async ({ where }: { where?: { column?: string } } = {}) => {
-        if (where?.column) {
-          const r = await pool.query(`SELECT * FROM "Issue" WHERE "column" = $1 ORDER BY "createdAt" ASC`, [where.column]);
-          return r.rows;
+      findMany: async ({ where }: { where?: { projectId?: string; column?: string } } = {}) => {
+        const conditions: string[] = [];
+        const params: unknown[] = [];
+        if (where?.projectId) {
+          params.push(where.projectId);
+          conditions.push(`"projectId" = $${params.length}`);
         }
-        const r = await pool.query(`SELECT * FROM "Issue" ORDER BY "createdAt" ASC`);
+        if (where?.column) {
+          params.push(where.column);
+          conditions.push(`"column" = $${params.length}`);
+        }
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const r = await pool.query(`SELECT * FROM "Issue" ${whereClause} ORDER BY "createdAt" ASC`, params);
         return r.rows;
       },
-      findUnique: async ({ where }: { where: { id: string } }) => {
-        const r = await pool.query(`SELECT * FROM "Issue" WHERE id = $1`, [where.id]);
+      findUnique: async ({ where }: { where: { id: string; projectId?: string } }) => {
+        let q = `SELECT * FROM "Issue" WHERE id = $1`;
+        const params: unknown[] = [where.id];
+        if (where.projectId) {
+          params.push(where.projectId);
+          q += ` AND "projectId" = $${params.length}`;
+        }
+        const r = await pool.query(q, params);
         return r.rows[0] ?? null;
       },
-      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      update: async ({ where, data }: { where: { id: string; projectId?: string }; data: Record<string, unknown> }) => {
         const entries = Object.entries(data).filter(([, v]) => v !== undefined);
         const fields = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(', ');
         const values = entries.map(([, v]) => v);
-        const r = await pool.query(
-          `UPDATE "Issue" SET ${fields} WHERE id = $1 RETURNING *`,
-          [where.id, ...values]
-        );
+        let q = `UPDATE "Issue" SET ${fields} WHERE id = $1`;
+        const params: unknown[] = [where.id, ...values];
+        if (where.projectId) {
+          params.push(where.projectId);
+          q += ` AND "projectId" = $${params.length}`;
+        }
+        q += ' RETURNING *';
+        const r = await pool.query(q, params);
         return r.rows[0];
       },
     },
@@ -224,6 +248,7 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
           branch: string;
           diffText: string;
           issueId: string;
+          projectId: string;
           authorUserId?: string | null;
           authorLabel: string;
         };
@@ -231,28 +256,40 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Diff" (id, title, description, branch, "diffText", "issueId", "authorUserId", "authorLabel", "createdAt")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          `INSERT INTO "Diff" (id, title, description, branch, "diffText", "issueId", "projectId", "authorUserId", "authorLabel", "createdAt")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
           [id, data.title, data.description, data.branch, data.diffText, data.issueId,
-           data.authorUserId ?? null, data.authorLabel, now]
+           data.projectId, data.authorUserId ?? null, data.authorLabel, now]
         );
         return r.rows[0];
       },
-      findUnique: async ({ where }: { where: { id: string } }) => {
-        const r = await pool.query(`SELECT * FROM "Diff" WHERE id = $1`, [where.id]);
+      findUnique: async ({ where }: { where: { id: string; projectId?: string } }) => {
+        let q = `SELECT * FROM "Diff" WHERE id = $1`;
+        const params: unknown[] = [where.id];
+        if (where.projectId) {
+          params.push(where.projectId);
+          q += ` AND "projectId" = $${params.length}`;
+        }
+        const r = await pool.query(q, params);
         return r.rows[0] ?? null;
       },
       findMany: async ({
         where,
         orderBy,
       }: {
-        where: { issueId: string };
+        where: { issueId: string; projectId?: string };
         orderBy: { createdAt: 'asc' | 'desc' };
       }) => {
         const dir = orderBy.createdAt === 'desc' ? 'DESC' : 'ASC';
+        const conditions = [`"issueId" = $1`];
+        const params: unknown[] = [where.issueId];
+        if (where.projectId) {
+          params.push(where.projectId);
+          conditions.push(`"projectId" = $${params.length}`);
+        }
         const r = await pool.query(
-          `SELECT * FROM "Diff" WHERE "issueId" = $1 ORDER BY "createdAt" ${dir}`,
-          [where.issueId]
+          `SELECT * FROM "Diff" WHERE ${conditions.join(' AND ')} ORDER BY "createdAt" ${dir}`,
+          params
         );
         return r.rows;
       },
@@ -264,18 +301,21 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
       },
     },
     skill: {
-      create: async ({ data }: { data: { name: string; description: string; prompt: string } }) => {
+      create: async ({ data }: { data: { name: string; description: string; prompt: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$5) RETURNING *`,
-          [id, data.name, data.description, data.prompt, now]
+          `INSERT INTO "Skill" (id, name, description, prompt, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING *`,
+          [id, data.name, data.description, data.prompt, data.projectId, now]
         );
         return r.rows[0];
       },
-      findUnique: async ({ where }: { where: { id?: string; name?: string } }) => {
-        if (where.name) {
-          const r = await pool.query(`SELECT * FROM "Skill" WHERE name = $1`, [where.name]);
+      findUnique: async ({ where }: { where: { id?: string; projectId_name?: { projectId: string; name: string } } }) => {
+        if (where.projectId_name) {
+          const r = await pool.query(
+            `SELECT * FROM "Skill" WHERE "projectId" = $1 AND name = $2`,
+            [where.projectId_name.projectId, where.projectId_name.name]
+          );
           return r.rows[0] ?? null;
         }
         if (where.id) {
@@ -284,7 +324,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         }
         return null;
       },
-      findMany: async () => {
+      findMany: async ({ where }: { where?: { projectId?: string } } = {}) => {
+        if (where?.projectId) {
+          const r = await pool.query(`SELECT * FROM "Skill" WHERE "projectId" = $1 ORDER BY name ASC`, [where.projectId]);
+          return r.rows;
+        }
         const r = await pool.query(`SELECT * FROM "Skill" ORDER BY name ASC`);
         return r.rows;
       },
@@ -325,27 +369,29 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
     },
     projectContext: {
       upsert: async ({
+        where,
         create,
       }: {
-        where: { id: string };
-        create: { id: string; content: string; authorLabel: string; authorUserId: string | null };
+        where: { projectId: string };
+        create: { projectId: string; content: string; authorLabel: string; authorUserId: string | null };
         update: { content: string; authorLabel: string; authorUserId: string | null; updatedAt: Date };
       }) => {
+        const id = crypto.randomUUID();
         const r = await pool.query(
-          `INSERT INTO "ProjectContext" (id, content, "authorLabel", "authorUserId", "updatedAt")
-           VALUES ($1, $2, $3, $4, NOW())
-           ON CONFLICT (id) DO UPDATE SET
-             content = $2,
-             "authorLabel" = $3,
-             "authorUserId" = $4,
+          `INSERT INTO "ProjectContext" (id, "projectId", content, "authorLabel", "authorUserId", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT ("projectId") DO UPDATE SET
+             content = $3,
+             "authorLabel" = $4,
+             "authorUserId" = $5,
              "updatedAt" = NOW()
            RETURNING *`,
-          [create.id, create.content, create.authorLabel, create.authorUserId]
+          [id, create.projectId, create.content, create.authorLabel, create.authorUserId]
         );
         return r.rows[0];
       },
-      findUnique: async ({ where }: { where: { id: string } }) => {
-        const r = await pool.query(`SELECT * FROM "ProjectContext" WHERE id = $1`, [where.id]);
+      findUnique: async ({ where }: { where: { projectId: string } }) => {
+        const r = await pool.query(`SELECT * FROM "ProjectContext" WHERE "projectId" = $1`, [where.projectId]);
         return r.rows[0] ?? null;
       },
     },
@@ -358,7 +404,7 @@ let client: Client;
 
 async function makeClient(): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createMcpServer(db, AGENT_LABEL);
+  const server = createMcpServer(db, AGENT_LABEL, testProjectId);
   await server.connect(serverTransport);
   const c = new Client({ name: 'test-client', version: '1.0.0' }, {});
   await c.connect(clientTransport);
@@ -367,16 +413,28 @@ async function makeClient(): Promise<Client> {
 
 before(async () => {
   db = makePgClient(pool);
+
+  const userId = crypto.randomUUID();
+  await pool.query(
+    `INSERT INTO "User" (id, email, "passwordHash", "createdAt", "updatedAt") VALUES ($1,$2,$3,NOW(),NOW())`,
+    [userId, `${TEST_PREFIX}@test.invalid`, 'hash']
+  );
+  testUserId = userId;
+
+  const projectId = crypto.randomUUID();
+  await pool.query(
+    `INSERT INTO "Project" (id, name, slug, "createdByUserId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+    [projectId, `MCP Test ${TEST_PREFIX}`, `mcp-${TEST_PREFIX}`, userId]
+  );
+  testProjectId = projectId;
+
   client = await makeClient();
 });
 
 after(async () => {
-  await pool.query(`DELETE FROM "Issue" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
-  await pool.query(`DELETE FROM "Document" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
-  await pool.query(`DELETE FROM "Diff" WHERE "issueId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
-  await pool.query(`DELETE FROM "Skill" WHERE name LIKE $1`, [`${TEST_PREFIX}%`]);
-  await pool.query(`DELETE FROM "ProjectContext" WHERE "authorLabel" = $1`, [AGENT_LABEL]);
+  await pool.query(`DELETE FROM "Project" WHERE id = $1`, [testProjectId]);
+  await pool.query(`DELETE FROM "User" WHERE id = $1`, [testUserId]);
   await pool.end();
 });
 
@@ -394,8 +452,8 @@ describe('list_issues', () => {
 
   it('filters by column', async () => {
     await pool.query(
-      `INSERT INTO "Issue" (id, title, description, "column", "createdAt", "updatedAt") VALUES ($1,$2,'',$3,NOW(),NOW())`,
-      [crypto.randomUUID(), `${TEST_PREFIX}-todo-issue`, 'TODO']
+      `INSERT INTO "Issue" (id, title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,'',$3,$4,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-todo-issue`, 'TODO', testProjectId]
     );
     const result = await client.callTool({ name: 'list_issues', arguments: { column: 'TODO' } });
     const issues = parseText(result) as Array<{ column: string }>;
@@ -850,25 +908,31 @@ describe('add_comment and list_comments on diff lines', () => {
 
 describe('auth: findActiveApiKey', () => {
   let rawKey: string;
-  let userId: string;
+  let authUserId: string;
+  let authProjectId: string;
 
   before(async () => {
-    userId = crypto.randomUUID();
+    authUserId = crypto.randomUUID();
     rawKey = `frg_${crypto.randomBytes(32).toString('hex')}`;
     const keyHash = hashApiKey(rawKey);
     await pool.query(
       `INSERT INTO "User" (id, email, "passwordHash", "createdAt", "updatedAt") VALUES ($1,$2,$3,NOW(),NOW()) ON CONFLICT DO NOTHING`,
-      [userId, `${TEST_PREFIX}@test.invalid`, 'hash']
+      [authUserId, `${TEST_PREFIX}-auth@test.invalid`, 'hash']
+    );
+    authProjectId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO "Project" (id, name, slug, "createdByUserId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [authProjectId, `Auth Test ${TEST_PREFIX}`, `auth-${TEST_PREFIX}`, authUserId]
     );
     await pool.query(
-      `INSERT INTO "ApiKey" (id, "userId", label, "keyHash", last4, "createdAt") VALUES ($1,$2,$3,$4,$5,NOW())`,
-      [crypto.randomUUID(), userId, AGENT_LABEL, keyHash, rawKey.slice(-4)]
+      `INSERT INTO "ApiKey" (id, "userId", "projectId", label, "keyHash", last4, "createdAt") VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
+      [crypto.randomUUID(), authUserId, authProjectId, AGENT_LABEL, keyHash, rawKey.slice(-4)]
     );
   });
 
   after(async () => {
-    await pool.query(`DELETE FROM "ApiKey" WHERE "userId" = $1`, [userId]);
-    await pool.query(`DELETE FROM "User" WHERE id = $1`, [userId]);
+    await pool.query(`DELETE FROM "Project" WHERE id = $1`, [authProjectId]);
+    await pool.query(`DELETE FROM "User" WHERE id = $1`, [authUserId]);
   });
 
   it('returns agent identity for a valid key', async () => {
@@ -891,12 +955,12 @@ describe('auth: findActiveApiKey', () => {
 describe('list_skills', () => {
   before(async () => {
     await pool.query(
-      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
-      [crypto.randomUUID(), `${TEST_PREFIX}-skill-alpha`, 'Alpha desc', '# Alpha']
+      `INSERT INTO "Skill" (id, name, description, prompt, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-alpha`, 'Alpha desc', '# Alpha', testProjectId]
     );
     await pool.query(
-      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
-      [crypto.randomUUID(), `${TEST_PREFIX}-skill-beta`, 'Beta desc', '# Beta']
+      `INSERT INTO "Skill" (id, name, description, prompt, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-beta`, 'Beta desc', '# Beta', testProjectId]
     );
   });
 
@@ -926,8 +990,8 @@ describe('get_skill', () => {
   before(async () => {
     skillId = crypto.randomUUID();
     await pool.query(
-      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
-      [skillId, `${TEST_PREFIX}-skill-with-files`, 'Skill with files', '# Main prompt']
+      `INSERT INTO "Skill" (id, name, description, prompt, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+      [skillId, `${TEST_PREFIX}-skill-with-files`, 'Skill with files', '# Main prompt', testProjectId]
     );
     await pool.query(
       `INSERT INTO "SkillFile" (id, "skillId", name, content, "createdAt") VALUES ($1,$2,$3,$4,NOW())`,
@@ -950,8 +1014,8 @@ describe('get_skill', () => {
 
   it('returns skill with empty files array when no supporting files', async () => {
     await pool.query(
-      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
-      [crypto.randomUUID(), `${TEST_PREFIX}-skill-no-files`, 'No files', '# Solo prompt']
+      `INSERT INTO "Skill" (id, name, description, prompt, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-no-files`, 'No files', '# Solo prompt', testProjectId]
     );
     const result = await client.callTool({
       name: 'get_skill',
@@ -973,11 +1037,11 @@ describe('get_skill', () => {
 
 describe('get_project_context', () => {
   before(async () => {
-    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+    await pool.query(`DELETE FROM "ProjectContext" WHERE "projectId" = $1`, [testProjectId]);
   });
 
   after(async () => {
-    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+    await pool.query(`DELETE FROM "ProjectContext" WHERE "projectId" = $1`, [testProjectId]);
   });
 
   it('returns empty string when no context has been set', async () => {
@@ -999,20 +1063,19 @@ describe('get_project_context', () => {
 
 describe('update_project_context', () => {
   before(async () => {
-    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+    await pool.query(`DELETE FROM "ProjectContext" WHERE "projectId" = $1`, [testProjectId]);
   });
 
   after(async () => {
-    await pool.query(`DELETE FROM "ProjectContext" WHERE id = 'singleton'`);
+    await pool.query(`DELETE FROM "ProjectContext" WHERE "projectId" = $1`, [testProjectId]);
   });
 
-  it('saves content and returns id and authorLabel', async () => {
+  it('saves content and returns authorLabel', async () => {
     const result = await client.callTool({
       name: 'update_project_context',
       arguments: { content: '# Context\nSome details.' },
     });
     const data = parseText(result) as { id: string; authorLabel: string };
-    assert.equal(data.id, 'singleton');
     assert.equal(data.authorLabel, AGENT_LABEL);
   });
 

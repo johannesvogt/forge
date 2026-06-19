@@ -11,7 +11,9 @@ export async function DELETE(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { fileId } = await params;
-  await deleteSkillFile(prisma as any, fileId);
+  await deleteSkillFile(prisma as any, projectId, fileId);
   return new NextResponse(null, { status: 204 });
 }

@@ -5,6 +5,7 @@ export interface Diff {
   branch: string;
   diffText: string;
   issueId: string;
+  projectId: string;
   authorUserId: string | null;
   authorLabel: string;
   createdAt: Date;
@@ -29,19 +30,20 @@ interface Db {
         branch: string;
         diffText: string;
         issueId: string;
+        projectId: string;
         authorUserId?: string | null;
         authorLabel: string;
       };
     }): Promise<Diff>;
-    findUnique(args: { where: { id: string } }): Promise<Diff | null>;
+    findUnique(args: { where: { id: string; projectId?: string } }): Promise<Diff | null>;
     findMany(args: {
-      where: { issueId: string };
+      where: { issueId: string; projectId?: string };
       orderBy: { createdAt: 'asc' | 'desc' };
     }): Promise<Diff[]>;
   };
 }
 
-export async function uploadDiff(db: Db, input: UploadDiffInput): Promise<Diff> {
+export async function uploadDiff(db: Db, projectId: string, input: UploadDiffInput): Promise<Diff> {
   return db.diff.create({
     data: {
       title: input.title,
@@ -49,19 +51,20 @@ export async function uploadDiff(db: Db, input: UploadDiffInput): Promise<Diff> 
       branch: input.branch,
       diffText: input.diffText,
       issueId: input.issueId,
+      projectId,
       authorUserId: input.authorUserId ?? null,
       authorLabel: input.authorLabel,
     },
   });
 }
 
-export async function getDiff(db: Db, id: string): Promise<Diff | null> {
-  return db.diff.findUnique({ where: { id } });
+export async function getDiff(db: Db, projectId: string, id: string): Promise<Diff | null> {
+  return db.diff.findUnique({ where: { id, projectId } });
 }
 
-export async function listDiffsByIssue(db: Db, issueId: string): Promise<Diff[]> {
+export async function listDiffsByIssue(db: Db, projectId: string, issueId: string): Promise<Diff[]> {
   return db.diff.findMany({
-    where: { issueId },
+    where: { issueId, projectId },
     orderBy: { createdAt: 'asc' },
   });
 }

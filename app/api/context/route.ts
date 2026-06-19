@@ -19,10 +19,12 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  let ctx = await getProjectContext(prisma as any);
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
+  let ctx = await getProjectContext(prisma as any, projectId);
   if (!ctx) {
     const content = await seedFromFile();
-    const result = await updateProjectContext(prisma as any, {
+    const result = await updateProjectContext(prisma as any, projectId, {
       content,
       authorLabel: 'system',
       authorUserId: null,
@@ -42,8 +44,10 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
   }
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const userName = (session.user as { name?: string }).name ?? session.user.id;
-  const { context, warning } = await updateProjectContext(prisma as any, {
+  const { context, warning } = await updateProjectContext(prisma as any, projectId, {
     content: body.content,
     authorLabel: userName,
     authorUserId: session.user.id,

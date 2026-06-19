@@ -12,10 +12,12 @@ export async function GET(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, id);
+  const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const docs = await listDocumentsByIssue(prisma as any, id);
+  const docs = await listDocumentsByIssue(prisma as any, projectId, id);
   return NextResponse.json(docs);
 }

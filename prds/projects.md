@@ -191,6 +191,19 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - `tsc --noEmit` passes with zero errors.
 - Existing tests that INSERT without `projectId` now fail with a not-null constraint violation — this is expected and will be fixed in issues #17/#18 when the service layer is updated.
 
+### Issue #18 — Domain services project scoping (done 2026-06-19)
+
+- All 5 domain services updated: `issue-service`, `document-service`, `diff-service`, `skill-service`, `context-service`.
+- Every public function gained a `projectId: string` second parameter; all DB queries filter/scope by `projectId`.
+- `context-service`: removed singleton pattern (`id: 'singleton'`); switched to per-project upsert via `ON CONFLICT ("projectId")`.
+- `skill-service.getSkillByName`: uses compound unique key `{ projectId_name: { projectId, name } }`.
+- Cross-project isolation tests added to every service: data created in project A is not visible when querying from project B.
+- `mcp/server.ts`: `createMcpServer(db, agentLabel, projectId)` — `projectId` fixed at startup, passed to every service call.
+- `mcp/index.ts`: extracts `projectId` from `findActiveApiKey` result; exits with error if `projectId` is falsy.
+- 17 API route files updated with `const projectId = '';` placeholder and `// TODO(issue #20)` comment.
+- 237 integration tests pass across all services and MCP server suite.
+- `tsc --noEmit` passes with zero errors.
+
 ## Further Notes
 
 The slug is the primary human-readable identifier used in URLs. If a project is renamed, the slug should remain stable to avoid breaking bookmarks — slug is set at creation and is not updated when the name changes. This can be revisited if renaming becomes a user need.

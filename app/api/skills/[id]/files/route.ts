@@ -8,8 +8,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  // TODO(issue #20): resolve projectId from URL slug
+  const projectId = '';
   const { id } = await params;
-  const skill = await getSkillById(prisma as any, id);
+  const skill = await getSkillById(prisma as any, projectId, id);
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 });
 
   const body = await request.json().catch(() => null);
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'name and content are required' }, { status: 400 });
   }
 
-  const file = await addSkillFile(prisma as any, id, {
+  const file = await addSkillFile(prisma as any, projectId, id, {
     name: body.name.trim(),
     content: body.content,
   });
