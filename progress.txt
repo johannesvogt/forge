@@ -1,3 +1,15 @@
+2026-06-19 — Issue 9: Diff Line-Level Comments
+
+Line-level comments anchored to (file_path, line_number, diff_id) tuples in the diff viewer.
+
+Deliverables:
+- prisma/schema.prisma — anchorFilePath String? added to Comment model; db push + client regenerated
+- lib/comments/comment-service.ts — DiffLineAnchor interface { filePath, lineNumber }; anchorFilePath field added to Comment, AddCommentInput, Db; listComments extended to accept DiffLineAnchor alongside Anchor
+- lib/comments/comment-service.test.ts — 4 new TDD integration tests (add diff line comment, list by diff+file+line anchor, diff isolation, resolve diff line comment)
+- app/api/diffs/[id]/comments/route.ts — GET list (optional ?filePath=&lineNumber= filter; 404 if diff missing) + POST create (human session or agent Bearer; validates body/filePath/lineNumber; 201)
+- app/diffs/[id]/page.tsx — click any diff line to open comment form; badge indicators on commented lines; click badge to open thread panel with Resolve per comment; Add reply button
+- 146/146 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 8: Diff Upload and View
 
 Upload and view PR diffs as immutable first-class artifacts.

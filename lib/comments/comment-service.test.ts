@@ -8,6 +8,7 @@ import {
   listComments,
   resolveComment,
   type Comment,
+  type DiffLineAnchor,
 } from './comment-service.ts';
 
 const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
@@ -29,13 +30,14 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
           status?: string;
           anchorStart?: number | null;
           anchorEnd?: number | null;
+          anchorFilePath?: string | null;
         };
       }): Promise<Comment> => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Comment" (id, "targetType", "targetId", body, "authorUserId", "authorLabel", status, "createdAt", "anchorStart", "anchorEnd")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          `INSERT INTO "Comment" (id, "targetType", "targetId", body, "authorUserId", "authorLabel", status, "createdAt", "anchorStart", "anchorEnd", "anchorFilePath")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
           [
             id,
             data.targetType,
@@ -47,12 +49,13 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
             now,
             data.anchorStart ?? null,
             data.anchorEnd ?? null,
+            data.anchorFilePath ?? null,
           ]
         );
         return r.rows[0];
       },
       findMany: async ({ where, orderBy }: {
-        where: { targetType: string; targetId: string; anchorStart?: number | null; anchorEnd?: number | null };
+        where: { targetType: string; targetId: string; anchorStart?: number | null; anchorEnd?: number | null; anchorFilePath?: string | null };
         orderBy: { createdAt: 'asc' | 'desc' };
       }): Promise<Comment[]> => {
         const dir = orderBy.createdAt === 'asc' ? 'ASC' : 'DESC';
@@ -65,6 +68,10 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         if (where.anchorEnd !== undefined) {
           conditions.push(`"anchorEnd" = $${values.length + 1}`);
           values.push(where.anchorEnd);
+        }
+        if (where.anchorFilePath !== undefined) {
+          conditions.push(`"anchorFilePath" = $${values.length + 1}`);
+          values.push(where.anchorFilePath);
         }
         const r = await pool.query(
           `SELECT * FROM "Comment" WHERE ${conditions.join(' AND ')} ORDER BY "createdAt" ${dir}`,
@@ -95,7 +102,7 @@ before(() => {
 });
 
 after(async () => {
-  await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE 'test-comment-issue-%' OR "targetId" LIKE 'test-doc-version-%'`);
+  await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE 'test-comment-issue-%' OR "targetId" LIKE 'test-doc-version-%' OR "targetId" LIKE 'test-diff-%'`);
   await pool.end();
 });
 
@@ -306,5 +313,80 @@ describe('resolveComment', () => {
     const comments = await listComments(db as any, 'issue', targetId);
     assert.equal(comments.length, 1);
     assert.equal(comments[0].status, 'resolved');
+  });
+});
+
+describe('diff line comments', () => {
+  it('adds a diff line comment with file path and line number', async () => {
+    const diffId = `test-diff-${crypto.randomUUID()}`;
+    const anchor: DiffLineAnchor = { filePath: 'src/foo.ts', lineNumber: 42 };
+    const comment = await addComment(db as any, {
+      targetType: 'diff_line',
+      targetId: diffId,
+      body: 'This line looks wrong.',
+      authorUserId: 'user-10',
+      authorLabel: 'Alice',
+      anchorFilePath: anchor.filePath,
+      anchorStart: anchor.lineNumber,
+    });
+    assert.equal(comment.targetType, 'diff_line');
+    assert.equal(comment.targetId, diffId);
+    assert.equal(comment.body, 'This line looks wrong.');
+    assert.equal(comment.anchorFilePath, 'src/foo.ts');
+    assert.equal(comment.anchorStart, 42);
+    assert.equal(comment.status, 'open');
+  });
+
+  it('listComments with DiffLineAnchor returns only comments for that file and line', async () => {
+    const diffId = `test-diff-${crypto.randomUUID()}`;
+    await addComment(db as any, {
+      targetType: 'diff_line', targetId: diffId, body: 'Line 5 comment', authorLabel: 'Alice',
+      anchorFilePath: 'src/foo.ts', anchorStart: 5,
+    });
+    await addComment(db as any, {
+      targetType: 'diff_line', targetId: diffId, body: 'Line 10 comment', authorLabel: 'Bob',
+      anchorFilePath: 'src/foo.ts', anchorStart: 10,
+    });
+    await addComment(db as any, {
+      targetType: 'diff_line', targetId: diffId, body: 'Other file comment', authorLabel: 'Carol',
+      anchorFilePath: 'src/bar.ts', anchorStart: 5,
+    });
+
+    const line5 = await listComments(db as any, 'diff_line', diffId, { filePath: 'src/foo.ts', lineNumber: 5 } as DiffLineAnchor);
+    assert.equal(line5.length, 1);
+    assert.equal(line5[0].body, 'Line 5 comment');
+
+    const line10 = await listComments(db as any, 'diff_line', diffId, { filePath: 'src/foo.ts', lineNumber: 10 } as DiffLineAnchor);
+    assert.equal(line10.length, 1);
+    assert.equal(line10[0].body, 'Line 10 comment');
+  });
+
+  it('comments on diff A are not shown when listing diff B', async () => {
+    const diffA = `test-diff-${crypto.randomUUID()}`;
+    const diffB = `test-diff-${crypto.randomUUID()}`;
+    await addComment(db as any, {
+      targetType: 'diff_line', targetId: diffA, body: 'Diff A comment', authorLabel: 'Alice',
+      anchorFilePath: 'src/foo.ts', anchorStart: 1,
+    });
+
+    const diffBComments = await listComments(db as any, 'diff_line', diffB);
+    assert.equal(diffBComments.length, 0);
+
+    const diffAComments = await listComments(db as any, 'diff_line', diffA);
+    assert.equal(diffAComments.length, 1);
+    assert.equal(diffAComments[0].body, 'Diff A comment');
+  });
+
+  it('resolves a diff line comment', async () => {
+    const diffId = `test-diff-${crypto.randomUUID()}`;
+    const comment = await addComment(db as any, {
+      targetType: 'diff_line', targetId: diffId, body: 'Needs fix', authorLabel: 'Alice',
+      anchorFilePath: 'src/foo.ts', anchorStart: 7,
+    });
+    assert.equal(comment.status, 'open');
+
+    const resolved = await resolveComment(db as any, comment.id);
+    assert.equal(resolved.id, comment.id);
+    assert.equal(resolved.status, 'resolved');
   });
 });

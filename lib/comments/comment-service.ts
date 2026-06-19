@@ -9,6 +9,7 @@ export interface Comment {
   createdAt: Date;
   anchorStart: number | null;
   anchorEnd: number | null;
+  anchorFilePath: string | null;
 }
 
 interface AddCommentInput {
@@ -19,6 +20,7 @@ interface AddCommentInput {
   authorLabel: string;
   anchorStart?: number | null;
   anchorEnd?: number | null;
+  anchorFilePath?: string | null;
 }
 
 export interface Anchor {
@@ -26,11 +28,22 @@ export interface Anchor {
   endOffset: number;
 }
 
+export interface DiffLineAnchor {
+  filePath: string;
+  lineNumber: number;
+}
+
 interface Db {
   comment: {
     create(args: { data: AddCommentInput & { status?: string } }): Promise<Comment>;
     findMany(args: {
-      where: { targetType: string; targetId: string; anchorStart?: number | null; anchorEnd?: number | null };
+      where: {
+        targetType: string;
+        targetId: string;
+        anchorStart?: number | null;
+        anchorEnd?: number | null;
+        anchorFilePath?: string | null;
+      };
       orderBy: { createdAt: 'asc' | 'desc' };
     }): Promise<Comment[]>;
     update(args: { where: { id: string }; data: { status: string } }): Promise<Comment>;
@@ -48,6 +61,7 @@ export async function addComment(db: Db, input: AddCommentInput): Promise<Commen
       status: 'open',
       anchorStart: input.anchorStart ?? null,
       anchorEnd: input.anchorEnd ?? null,
+      anchorFilePath: input.anchorFilePath ?? null,
     },
   });
 }
@@ -56,16 +70,26 @@ export async function listComments(
   db: Db,
   targetType: string,
   targetId: string,
-  anchor?: Anchor
+  anchor?: Anchor | DiffLineAnchor
 ): Promise<Comment[]> {
-  const where: { targetType: string; targetId: string; anchorStart?: number | null; anchorEnd?: number | null } = {
-    targetType,
-    targetId,
-  };
+  const where: {
+    targetType: string;
+    targetId: string;
+    anchorStart?: number | null;
+    anchorEnd?: number | null;
+    anchorFilePath?: string | null;
+  } = { targetType, targetId };
+
   if (anchor !== undefined) {
-    where.anchorStart = anchor.startOffset;
-    where.anchorEnd = anchor.endOffset;
+    if ('filePath' in anchor) {
+      where.anchorFilePath = anchor.filePath;
+      where.anchorStart = anchor.lineNumber;
+    } else {
+      where.anchorStart = anchor.startOffset;
+      where.anchorEnd = anchor.endOffset;
+    }
   }
+
   return db.comment.findMany({
     where,
     orderBy: { createdAt: 'asc' },

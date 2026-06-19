@@ -44,8 +44,9 @@ model Comment {
   authorLabel   String
   status        String   @default("open")
   createdAt     DateTime @default(now())
-  anchorStart   Int?
-  anchorEnd     Int?
+  anchorStart    Int?
+  anchorEnd      Int?
+  anchorFilePath String?
 }
 
 model Document {
