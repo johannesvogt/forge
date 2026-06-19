@@ -1,3 +1,16 @@
+2026-06-19 — Issue 7: Document Inline Comments
+
+Inline comments anchored to character offset ranges within specific document versions.
+
+Deliverables:
+- prisma/schema.prisma — anchorStart Int? and anchorEnd Int? added to Comment model; db push + client regenerated
+- lib/comments/comment-service.ts — extended Comment interface with anchorStart/anchorEnd; extended AddCommentInput with optional anchor; extended listComments to accept optional Anchor filter; added resolveComment(db, id); extended Db interface with comment.update and anchor-aware findMany
+- lib/comments/comment-service.test.ts — 6 new integration tests (add with anchor, null anchor for issue comments, anchor filter returns matching range, no-anchor returns all, resolve sets status, resolved visible in list); makePgClient extended
+- app/api/documents/[id]/comments/route.ts — GET list (with optional ?versionId and anchor params) + POST create inline comment (dual auth; validates versionId, anchorStart, anchorEnd, body)
+- app/api/comments/[id]/route.ts — PATCH resolve comment (human session; status must be "resolved")
+- app/documents/[id]/page.tsx — text selection captures char offsets; floating comment form on selection; renderAnnotatedContent highlights commented ranges (yellow=open, gray=resolved); click highlight to open thread panel; Resolve button per comment
+- 132/132 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 6: Document Store Versioning
 
 Append-only version history for documents with diff view.

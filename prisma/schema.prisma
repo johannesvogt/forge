@@ -36,14 +36,16 @@ model Issue {
 }
 
 model Comment {
-  id           String   @id @default(cuid())
-  targetType   String   // 'issue' | 'document_section' | 'diff_line'
-  targetId     String
-  body         String
-  authorUserId String?
-  authorLabel  String
-  status       String   @default("open")
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  targetType    String   // 'issue' | 'document_section' | 'diff_line'
+  targetId      String
+  body          String
+  authorUserId  String?
+  authorLabel   String
+  status        String   @default("open")
+  createdAt     DateTime @default(now())
+  anchorStart   Int?
+  anchorEnd     Int?
 }
 
 model Document {

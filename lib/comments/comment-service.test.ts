@@ -6,6 +6,7 @@ const { Pool } = pkg;
 import {
   addComment,
   listComments,
+  resolveComment,
   type Comment,
 } from './comment-service.ts';
 
@@ -26,13 +27,15 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
           authorUserId?: string | null;
           authorLabel: string;
           status?: string;
+          anchorStart?: number | null;
+          anchorEnd?: number | null;
         };
       }): Promise<Comment> => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Comment" (id, "targetType", "targetId", body, "authorUserId", "authorLabel", status, "createdAt")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          `INSERT INTO "Comment" (id, "targetType", "targetId", body, "authorUserId", "authorLabel", status, "createdAt", "anchorStart", "anchorEnd")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
           [
             id,
             data.targetType,
@@ -42,20 +45,43 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
             data.authorLabel,
             data.status ?? 'open',
             now,
+            data.anchorStart ?? null,
+            data.anchorEnd ?? null,
           ]
         );
         return r.rows[0];
       },
       findMany: async ({ where, orderBy }: {
-        where: { targetType: string; targetId: string };
+        where: { targetType: string; targetId: string; anchorStart?: number | null; anchorEnd?: number | null };
         orderBy: { createdAt: 'asc' | 'desc' };
       }): Promise<Comment[]> => {
         const dir = orderBy.createdAt === 'asc' ? 'ASC' : 'DESC';
+        const conditions: string[] = [`"targetType" = $1`, `"targetId" = $2`];
+        const values: (string | number | null)[] = [where.targetType, where.targetId];
+        if (where.anchorStart !== undefined) {
+          conditions.push(`"anchorStart" = $${values.length + 1}`);
+          values.push(where.anchorStart);
+        }
+        if (where.anchorEnd !== undefined) {
+          conditions.push(`"anchorEnd" = $${values.length + 1}`);
+          values.push(where.anchorEnd);
+        }
         const r = await pool.query(
-          `SELECT * FROM "Comment" WHERE "targetType" = $1 AND "targetId" = $2 ORDER BY "createdAt" ${dir}`,
-          [where.targetType, where.targetId]
+          `SELECT * FROM "Comment" WHERE ${conditions.join(' AND ')} ORDER BY "createdAt" ${dir}`,
+          values
         );
         return r.rows;
+      },
+      update: async ({ where, data }: {
+        where: { id: string };
+        data: { status: string };
+      }): Promise<Comment> => {
+        const r = await pool.query(
+          `UPDATE "Comment" SET status = $1 WHERE id = $2 RETURNING *`,
+          [data.status, where.id]
+        );
+        if (r.rows.length === 0) throw new Error(`Comment not found: ${where.id}`);
+        return r.rows[0];
       },
     },
   };
@@ -69,7 +95,7 @@ before(() => {
 });
 
 after(async () => {
-  await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE 'test-comment-issue-%'`);
+  await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE 'test-comment-issue-%' OR "targetId" LIKE 'test-doc-version-%'`);
   await pool.end();
 });
 
@@ -178,5 +204,107 @@ describe('listComments', () => {
     assert.equal(c.authorLabel, 'Dave');
     assert.equal(c.status, 'open');
     assert.ok(c.createdAt);
+  });
+});
+
+describe('inline document section comments', () => {
+  it('adds an inline comment with anchorStart and anchorEnd', async () => {
+    const versionId = `test-doc-version-${crypto.randomUUID()}`;
+    const comment = await addComment(db as any, {
+      targetType: 'document_section',
+      targetId: versionId,
+      body: 'This paragraph needs revision.',
+      authorUserId: 'user-10',
+      authorLabel: 'Eve',
+      anchorStart: 42,
+      anchorEnd: 85,
+    });
+    assert.equal(comment.targetType, 'document_section');
+    assert.equal(comment.targetId, versionId);
+    assert.equal(comment.body, 'This paragraph needs revision.');
+    assert.equal(comment.anchorStart, 42);
+    assert.equal(comment.anchorEnd, 85);
+    assert.equal(comment.status, 'open');
+  });
+
+  it('stores null anchor fields for issue comments', async () => {
+    const targetId = `test-comment-issue-${crypto.randomUUID()}`;
+    const comment = await addComment(db as any, {
+      targetType: 'issue',
+      targetId,
+      body: 'Plain issue comment',
+      authorLabel: 'Frank',
+    });
+    assert.equal(comment.anchorStart, null);
+    assert.equal(comment.anchorEnd, null);
+  });
+
+  it('listComments with anchor filter returns only matching anchor', async () => {
+    const versionId = `test-doc-version-${crypto.randomUUID()}`;
+    await addComment(db as any, {
+      targetType: 'document_section',
+      targetId: versionId,
+      body: 'Comment on range A',
+      authorLabel: 'Alice',
+      anchorStart: 0,
+      anchorEnd: 50,
+    });
+    await addComment(db as any, {
+      targetType: 'document_section',
+      targetId: versionId,
+      body: 'Comment on range B',
+      authorLabel: 'Bob',
+      anchorStart: 100,
+      anchorEnd: 200,
+    });
+
+    const rangeA = await listComments(db as any, 'document_section', versionId, { startOffset: 0, endOffset: 50 });
+    assert.equal(rangeA.length, 1);
+    assert.equal(rangeA[0].body, 'Comment on range A');
+
+    const rangeB = await listComments(db as any, 'document_section', versionId, { startOffset: 100, endOffset: 200 });
+    assert.equal(rangeB.length, 1);
+    assert.equal(rangeB[0].body, 'Comment on range B');
+  });
+
+  it('listComments without anchor returns all comments for the version', async () => {
+    const versionId = `test-doc-version-${crypto.randomUUID()}`;
+    await addComment(db as any, { targetType: 'document_section', targetId: versionId, body: 'C1', authorLabel: 'Alice', anchorStart: 0, anchorEnd: 10 });
+    await addComment(db as any, { targetType: 'document_section', targetId: versionId, body: 'C2', authorLabel: 'Bob', anchorStart: 20, anchorEnd: 30 });
+
+    const all = await listComments(db as any, 'document_section', versionId);
+    assert.equal(all.length, 2);
+  });
+});
+
+describe('resolveComment', () => {
+  it('sets status to resolved', async () => {
+    const targetId = `test-comment-issue-${crypto.randomUUID()}`;
+    const comment = await addComment(db as any, {
+      targetType: 'issue',
+      targetId,
+      body: 'Needs fixing',
+      authorLabel: 'Alice',
+    });
+    assert.equal(comment.status, 'open');
+
+    const resolved = await resolveComment(db as any, comment.id);
+    assert.equal(resolved.id, comment.id);
+    assert.equal(resolved.status, 'resolved');
+  });
+
+  it('resolved comment is returned with resolved status in listComments', async () => {
+    const targetId = `test-comment-issue-${crypto.randomUUID()}`;
+    const comment = await addComment(db as any, {
+      targetType: 'issue',
+      targetId,
+      body: 'Will resolve',
+      authorLabel: 'Bob',
+    });
+    await resolveComment(db as any, comment.id);
+
+    const comments = await listComments(db as any, 'issue', targetId);
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0].status, 'resolved');
   });
 });

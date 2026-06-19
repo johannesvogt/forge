@@ -163,6 +163,17 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 7 — Document Inline Comments (completed 2026-06-19)
+
+Inline comments anchored to character offset ranges in specific document versions. Commented sections are highlighted in the viewer; clicking reveals the thread. Humans can resolve comments.
+
+- **Prisma schema** (`prisma/schema.prisma`): Added `anchorStart Int?` and `anchorEnd Int?` to the Comment model. Schema pushed and client regenerated.
+- **Comment service** (`lib/comments/comment-service.ts`): Extended `Comment` interface with `anchorStart`/`anchorEnd` fields. Extended `AddCommentInput` to accept optional anchor fields. Extended `listComments` to accept an optional `Anchor { startOffset, endOffset }` parameter that filters by anchor. Added `resolveComment(db, id)` — sets `status = 'resolved'`. Extended `Db` interface with `comment.update` and anchor filtering on `comment.findMany`.
+- **TDD tests** (`lib/comments/comment-service.test.ts`): 6 new integration tests across two new suites: add inline comment with anchor, null anchor for issue comments, anchor filter returns only matching range, no-anchor returns all, resolve sets status to resolved, resolved status visible in listComments. `makePgClient` extended with `update` method and anchor-aware `findMany`.
+- **API routes**: `GET /api/documents/[id]/comments?versionId=X[&anchorStart=N&anchorEnd=M]` — list inline comments, optionally filtered by anchor. `POST /api/documents/[id]/comments` — add inline comment (human session or agent Bearer; requires versionId, anchorStart, anchorEnd, body). `PATCH /api/comments/[id]` — resolve a comment (human session; body `{ status: "resolved" }`).
+- **Document viewer** (`app/documents/[id]/page.tsx`): Mouse-up handler captures selection as character offsets. Floating comment form appears on selection. `renderAnnotatedContent` splits text at all comment boundaries and wraps matched segments in `<mark>` elements (yellow for open, gray/dim for resolved, bright yellow when active). Clicking a highlighted segment reveals the thread panel below the content. Each comment in the thread has a Resolve button that calls `PATCH /api/comments/[id]` and updates state optimistically.
+- **Test count**: 132/132 pass; `tsc --noEmit` clean.
+
 ### Issue 6 — Document Store: Versioning (completed 2026-06-19)
 
 Append-only version history for documents. Every update creates a new version snapshot; prior versions are never mutated. The viewer exposes a version history sidebar, a version selector, and a diff view.

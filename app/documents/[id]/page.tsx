@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -21,7 +21,27 @@ interface VersionSummary {
   createdAt: string;
 }
 
+interface InlineComment {
+  id: string;
+  targetType: string;
+  targetId: string;
+  body: string;
+  authorUserId: string | null;
+  authorLabel: string;
+  status: string;
+  createdAt: string;
+  anchorStart: number | null;
+  anchorEnd: number | null;
+}
+
 type Tab = 'view' | 'diff';
+
+interface SelectionState {
+  start: number;
+  end: number;
+  x: number;
+  y: number;
+}
 
 export default function DocumentViewerPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +55,14 @@ export default function DocumentViewerPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Inline comment state
+  const [comments, setComments] = useState<InlineComment[]>([]);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [newCommentBody, setNewCommentBody] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [activeAnchor, setActiveAnchor] = useState<{ start: number; end: number } | null>(null);
+  const contentRef = useRef<HTMLPreElement>(null);
 
   // Load version list once
   useEffect(() => {
@@ -69,6 +97,19 @@ export default function DocumentViewerPage() {
       .finally(() => setLoading(false));
   }, [id, selectedVersion]);
 
+  // Load inline comments for current version
+  useEffect(() => {
+    if (!doc) return;
+    const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
+    if (!currentVersion) return;
+    fetch(`/api/documents/${id}/comments?versionId=${currentVersion.id}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        setComments(await res.json());
+      })
+      .catch(() => {});
+  }, [id, doc, versions]);
+
   function loadDiff() {
     setDiffLoading(true);
     setDiffText(null);
@@ -82,12 +123,149 @@ export default function DocumentViewerPage() {
       .finally(() => setDiffLoading(false));
   }
 
+  const handleTextSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !contentRef.current) {
+      setSelection(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const preEl = contentRef.current;
+    // Compute character offsets relative to the pre element's text content
+    const preRange = window.document.createRange();
+    preRange.selectNodeContents(preEl);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const start = preRange.toString().length;
+    const end = start + range.toString().length;
+    if (start === end) { setSelection(null); return; }
+    const rect = range.getBoundingClientRect();
+    const preRect = preEl.getBoundingClientRect();
+    setSelection({
+      start,
+      end,
+      x: rect.left - preRect.left,
+      y: rect.bottom - preRect.top + 4,
+    });
+  }, []);
+
+  async function submitInlineComment() {
+    if (!selection || !doc || !newCommentBody.trim()) return;
+    const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
+    if (!currentVersion) return;
+    setSubmittingComment(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          versionId: currentVersion.id,
+          body: newCommentBody.trim(),
+          anchorStart: selection.start,
+          anchorEnd: selection.end,
+        }),
+      });
+      if (res.ok) {
+        const comment: InlineComment = await res.json();
+        setComments((prev) => [...prev, comment]);
+        setSelection(null);
+        setNewCommentBody('');
+        window.getSelection()?.removeAllRanges();
+      }
+    } finally {
+      setSubmittingComment(false);
+    }
+  }
+
+  async function resolveComment(commentId: string) {
+    const res = await fetch(`/api/comments/${commentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'resolved' }),
+    });
+    if (res.ok) {
+      const updated: InlineComment = await res.json();
+      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+    }
+  }
+
+  // Render content with highlighted comment ranges
+  function renderAnnotatedContent(content: string) {
+    if (comments.length === 0) {
+      return <span>{content}</span>;
+    }
+
+    // Build list of annotated ranges (open comments only for highlighting)
+    const ranges = comments
+      .filter((c) => c.anchorStart !== null && c.anchorEnd !== null)
+      .map((c) => ({ start: c.anchorStart!, end: c.anchorEnd!, comment: c }));
+
+    if (ranges.length === 0) return <span>{content}</span>;
+
+    // Collect all boundary points and split content into segments
+    const boundaries = new Set<number>([0, content.length]);
+    for (const r of ranges) {
+      boundaries.add(Math.max(0, r.start));
+      boundaries.add(Math.min(content.length, r.end));
+    }
+    const sorted = Array.from(boundaries).sort((a, b) => a - b);
+
+    const segments: { text: string; start: number; end: number }[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      segments.push({ text: content.slice(sorted[i], sorted[i + 1]), start: sorted[i], end: sorted[i + 1] });
+    }
+
+    return (
+      <>
+        {segments.map((seg, i) => {
+          const matchingComments = ranges.filter((r) => r.start <= seg.start && r.end >= seg.end);
+          const hasOpen = matchingComments.some((r) => r.comment.status === 'open');
+          const hasResolved = matchingComments.some((r) => r.comment.status === 'resolved');
+          const isActive = activeAnchor &&
+            matchingComments.some((r) => r.comment.anchorStart === activeAnchor.start && r.comment.anchorEnd === activeAnchor.end);
+          if (matchingComments.length === 0) return <span key={i}>{seg.text}</span>;
+          const firstComment = matchingComments[0].comment;
+          return (
+            <mark
+              key={i}
+              onClick={() =>
+                setActiveAnchor((prev) =>
+                  prev?.start === firstComment.anchorStart && prev?.end === firstComment.anchorEnd
+                    ? null
+                    : { start: firstComment.anchorStart!, end: firstComment.anchorEnd! }
+                )
+              }
+              className={`cursor-pointer rounded px-0.5 ${
+                isActive
+                  ? 'bg-yellow-300'
+                  : hasOpen
+                  ? 'bg-yellow-100 hover:bg-yellow-200'
+                  : hasResolved
+                  ? 'bg-gray-100 hover:bg-gray-200 opacity-60'
+                  : ''
+              }`}
+              title="Click to view comments"
+            >
+              {seg.text}
+            </mark>
+          );
+        })}
+      </>
+    );
+  }
+
   if (loading) return <p className="text-gray-500">Loading…</p>;
   if (error) return <p className="text-red-600">{error}</p>;
   if (!doc) return null;
 
+  const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
+  const activeComments = activeAnchor
+    ? comments.filter(
+        (c) => c.anchorStart === activeAnchor.start && c.anchorEnd === activeAnchor.end
+      )
+    : [];
+
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-5xl">
       <div className="mb-4">
         <Link href="/board" className="text-sm text-indigo-600 hover:underline">
           ← Board
@@ -154,11 +332,114 @@ export default function DocumentViewerPage() {
               </div>
             )}
 
-            {/* Content */}
-            <div className="min-w-0 flex-1 border-t border-gray-100 pt-4">
-              <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800">
-                {doc.content}
-              </pre>
+            {/* Content + inline comment UI */}
+            <div className="min-w-0 flex-1">
+              <p className="mb-2 text-xs text-gray-400">Select text to add an inline comment.</p>
+              <div className="relative border-t border-gray-100 pt-4">
+                <pre
+                  ref={contentRef}
+                  onMouseUp={handleTextSelection}
+                  className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800 select-text"
+                >
+                  {renderAnnotatedContent(doc.content)}
+                </pre>
+
+                {/* Floating comment form on selection */}
+                {selection && (
+                  <div
+                    className="absolute z-10 w-72 rounded-lg border border-gray-200 bg-white p-3 shadow-lg"
+                    style={{ left: Math.min(selection.x, 400), top: selection.y }}
+                  >
+                    <p className="mb-2 text-xs font-medium text-gray-600">Add inline comment</p>
+                    <textarea
+                      autoFocus
+                      value={newCommentBody}
+                      onChange={(e) => setNewCommentBody(e.target.value)}
+                      rows={3}
+                      placeholder="Your comment…"
+                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    />
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button
+                        onClick={() => { setSelection(null); setNewCommentBody(''); window.getSelection()?.removeAllRanges(); }}
+                        className="rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitInlineComment}
+                        disabled={submittingComment || !newCommentBody.trim()}
+                        className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {submittingComment ? 'Saving…' : 'Comment'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Active anchor comment thread */}
+              {activeAnchor && activeComments.length > 0 && (
+                <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-medium text-yellow-800">
+                      Comments on selected range ({activeAnchor.start}–{activeAnchor.end})
+                    </p>
+                    <button
+                      onClick={() => setActiveAnchor(null)}
+                      className="text-xs text-yellow-600 hover:text-yellow-800"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <ul className="space-y-2">
+                    {activeComments.map((c) => (
+                      <li
+                        key={c.id}
+                        className={`rounded border p-2 text-sm ${
+                          c.status === 'resolved'
+                            ? 'border-gray-200 bg-gray-50 opacity-60'
+                            : 'border-yellow-200 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-medium text-gray-700">{c.authorLabel}</span>
+                            <span className="ml-2 text-xs text-gray-400">
+                              {new Date(c.createdAt).toLocaleString()}
+                            </span>
+                            {c.status === 'resolved' && (
+                              <span className="ml-2 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500">
+                                resolved
+                              </span>
+                            )}
+                          </div>
+                          {c.status === 'open' && (
+                            <button
+                              onClick={() => resolveComment(c.id)}
+                              className="flex-shrink-0 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                            >
+                              Resolve
+                            </button>
+                          )}
+                        </div>
+                        <p className="mt-1 text-gray-700">{c.body}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Comment legend */}
+              {comments.length > 0 && !activeAnchor && (
+                <div className="mt-4 rounded border border-gray-100 bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-500">
+                    {comments.filter((c) => c.status === 'open').length} open ·{' '}
+                    {comments.filter((c) => c.status === 'resolved').length} resolved inline comment
+                    {comments.length !== 1 ? 's' : ''}. Click highlighted text to view.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -213,7 +494,7 @@ export default function DocumentViewerPage() {
                         : 'text-gray-700';
                     return (
                       <span key={i} className={`block ${color}`}>
-                        {line || ' '}
+                        {line || ' '}
                       </span>
                     );
                   })}
