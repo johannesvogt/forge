@@ -1,3 +1,12 @@
+2026-06-19 Issue #16 — Project service
+  - Created lib/projects/project-service.ts: createProject, listProjects, getProject, deleteProject, SlugConflictError.
+  - Slug generation: lowercase, spaces→hyphens, strip non-alphanumeric, collapse consecutive hyphens.
+  - createProject seeds default skills into the project and creates an empty ProjectContext.
+  - Updated lib/skills/seed-skills.ts: seedDefaultSkills now requires projectId; uses compound unique key projectId_name.
+  - Removed stale global seedDefaultSkills call from app/api/skills/route.ts (will be replaced in issue #20).
+  - 7 integration tests pass: create, slug format, list order, get-by-slug (found + null), delete cascade, slug conflict.
+  - tsc --noEmit passes with zero errors.
+
 2026-06-19 Issue #15 — Project schema
   - Deleted stale migration (20260619204655_init) and generated fresh migration (20260619212541_init) from current schema.prisma.
   - schema.prisma already had Project model, projectId FKs with CASCADE DELETE on all 6 models, ProjectContext@@unique([projectId]), Skill@@unique([projectId, name]).

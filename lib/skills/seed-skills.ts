@@ -131,16 +131,16 @@ Do not propose changes that introduce new external dependencies or change public
 
 interface SeedDb {
   skill: {
-    findUnique(args: { where: { name: string } }): Promise<Skill | null>;
-    create(args: { data: { name: string; description: string; prompt: string } }): Promise<Skill>;
+    findUnique(args: { where: { projectId_name?: { projectId: string; name: string }; name?: string } }): Promise<Skill | null>;
+    create(args: { data: { name: string; description: string; prompt: string; projectId: string } }): Promise<Skill>;
   };
 }
 
-export async function seedDefaultSkills(db: SeedDb): Promise<void> {
+export async function seedDefaultSkills(db: SeedDb, projectId: string): Promise<void> {
   for (const skill of DEFAULT_SKILLS) {
-    const existing = await db.skill.findUnique({ where: { name: skill.name } });
+    const existing = await db.skill.findUnique({ where: { projectId_name: { projectId, name: skill.name } } });
     if (!existing) {
-      await db.skill.create({ data: skill });
+      await db.skill.create({ data: { ...skill, projectId } });
     }
   }
 }

@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { createSkill, listSkills } from '@/lib/skills/skill-service';
-import { seedDefaultSkills } from '@/lib/skills/seed-skills';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  await seedDefaultSkills(prisma as any);
   const skills = await listSkills(prisma as any);
   return NextResponse.json(skills);
 }

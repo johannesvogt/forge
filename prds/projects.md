@@ -162,6 +162,16 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 
 ## Implementation Progress
 
+### Issue #16 — Project service (done 2026-06-19)
+
+- Created `lib/projects/project-service.ts` with `createProject`, `listProjects`, `getProject`, `deleteProject`, and `SlugConflictError`.
+- Slug generation: lowercase, spaces → hyphens, non-alphanumeric stripped, consecutive hyphens collapsed.
+- `createProject` seeds default skills into the project and creates an empty `ProjectContext` by calling `seedDefaultSkills` and `db.projectContext.create`.
+- Updated `lib/skills/seed-skills.ts`: `seedDefaultSkills` now requires a `projectId` argument and uses the compound unique key `{ projectId_name: { projectId, name } }` for duplicate detection.
+- Removed stale global `seedDefaultSkills` call from `app/api/skills/route.ts` (route will be replaced in issue #20).
+- 7 integration tests pass: create (slug, seeded skills, empty context), slug generation, list (ordered desc), get by slug (found + null), delete cascade (skills and context removed), slug conflict `SlugConflictError`.
+- `tsc --noEmit` passes with zero errors.
+
 ### Issue #15 — Project schema (done 2026-06-19)
 
 - `schema.prisma` already had the full Project model and `projectId` FKs; the stale migration was replaced.
