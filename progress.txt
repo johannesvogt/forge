@@ -1,3 +1,22 @@
+2026-06-19 — Issue 13: Skill Registry
+
+Humans manage prompt-based skills via the web UI; agents load them read-only via MCP. Five default skills seeded on first load.
+
+Deliverables:
+- prisma/schema.prisma — Skill model (id, name unique, description, prompt, timestamps) and SkillFile model (id, skillId cascade FK, name, content, createdAt; unique [skillId, name]); db push + client regenerated
+- lib/skills/skill-service.ts — Skill and SkillFile interfaces; Db interface for testability; createSkill, getSkillByName, getSkillById, listSkills, updateSkill, deleteSkill, addSkillFile, getSkillWithFiles, deleteSkillFile
+- lib/skills/skill-service.test.ts — 16 TDD integration tests across 7 suites covering create, lookup by name/id, list, update, delete, file attachment, and file removal
+- lib/skills/seed-skills.ts — seedDefaultSkills idempotently creates the 5 default skills (to-prd, to-issues, grill-with-docs, tdd, improve-codebase-architecture) with full Forge-MCP-adapted prompts
+- app/api/skills/route.ts — GET list (auto-seeds defaults on first call) + POST create (human session)
+- app/api/skills/[id]/route.ts — GET detail with files, PATCH update, DELETE (human session)
+- app/api/skills/[id]/files/route.ts — POST add supporting file (human session)
+- app/api/skills/[id]/files/[fileId]/route.ts — DELETE remove file (human session)
+- app/skills/page.tsx — lists skills with name, description, date; inline create form; links to detail page
+- app/skills/[id]/page.tsx — shows name, description, primary prompt; inline edit form; delete with confirm; supporting files panel with add/remove
+- mcp/server.ts — list_skills() returns [{name, description}]; get_skill(name) returns {skill, files}; isError on unknown name; no write tools for agents
+- mcp/server.test.ts — makePgClient extended with skill/skillFile; cleanup in after(); 6 new integration tests: list_skills (name+description, no prompt in list), get_skill (prompt+files, empty files, isError on unknown)
+- 200/200 tests passing; tsc --noEmit clean
+
 2026-06-19 — Issue 12: MCP Gateway — Diffs
 
 Extended MCP server with three diff tools and verified diff line comment support end-to-end via the existing add_comment/list_comments tools.

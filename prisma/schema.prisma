@@ -91,3 +91,24 @@ model Diff {
   authorLabel  String
   createdAt    DateTime @default(now())
 }
+
+model Skill {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  description String      @default("")
+  prompt      String      @default("")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  files       SkillFile[]
+}
+
+model SkillFile {
+  id        String   @id @default(cuid())
+  skillId   String
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  name      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@unique([skillId, name])
+}

@@ -4,6 +4,7 @@ import { createIssue, listIssues, getIssue, updateIssue, moveIssue } from '../li
 import { addComment, listComments } from '../lib/comments/comment-service.ts';
 import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
 import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
+import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -243,6 +244,34 @@ export function createMcpServer(db: any, agentLabel: string): McpServer {
     async ({ issue_id }) => {
       const diffs = await listDiffsByIssue(db, issue_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(diffs) }] };
+    }
+  );
+
+  server.tool(
+    'list_skills',
+    'List all available skills with their names and descriptions',
+    {},
+    async () => {
+      const skills = await listSkills(db);
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(skills.map((s) => ({ name: s.name, description: s.description }))),
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    'get_skill',
+    'Get a skill by name, returning its primary prompt and all supporting files',
+    { name: z.string() },
+    async ({ name }) => {
+      const result = await getSkillWithFiles(db, name);
+      if (!result) throw new Error(`Skill not found: ${name}`);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     }
   );
 

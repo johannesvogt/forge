@@ -263,6 +263,66 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         return r.rows[0] ?? null;
       },
     },
+    skill: {
+      create: async ({ data }: { data: { name: string; description: string; prompt: string } }) => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$5) RETURNING *`,
+          [id, data.name, data.description, data.prompt, now]
+        );
+        return r.rows[0];
+      },
+      findUnique: async ({ where }: { where: { id?: string; name?: string } }) => {
+        if (where.name) {
+          const r = await pool.query(`SELECT * FROM "Skill" WHERE name = $1`, [where.name]);
+          return r.rows[0] ?? null;
+        }
+        if (where.id) {
+          const r = await pool.query(`SELECT * FROM "Skill" WHERE id = $1`, [where.id]);
+          return r.rows[0] ?? null;
+        }
+        return null;
+      },
+      findMany: async () => {
+        const r = await pool.query(`SELECT * FROM "Skill" ORDER BY name ASC`);
+        return r.rows;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+        const fields = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(', ');
+        const values = entries.map(([, v]) => v);
+        const r = await pool.query(
+          `UPDATE "Skill" SET ${fields} WHERE id = $1 RETURNING *`,
+          [where.id, ...values]
+        );
+        return r.rows[0];
+      },
+      delete: async ({ where }: { where: { id: string } }) => {
+        await pool.query(`DELETE FROM "Skill" WHERE id = $1`, [where.id]);
+      },
+    },
+    skillFile: {
+      create: async ({ data }: { data: { skillId: string; name: string; content: string } }) => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "SkillFile" (id, "skillId", name, content, "createdAt") VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+          [id, data.skillId, data.name, data.content, now]
+        );
+        return r.rows[0];
+      },
+      findMany: async ({ where }: { where: { skillId: string } }) => {
+        const r = await pool.query(
+          `SELECT * FROM "SkillFile" WHERE "skillId" = $1 ORDER BY name ASC`,
+          [where.skillId]
+        );
+        return r.rows;
+      },
+      delete: async ({ where }: { where: { id: string } }) => {
+        await pool.query(`DELETE FROM "SkillFile" WHERE id = $1`, [where.id]);
+      },
+    },
   };
 }
 
@@ -289,6 +349,7 @@ after(async () => {
   await pool.query(`DELETE FROM "Comment" WHERE "targetId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
   await pool.query(`DELETE FROM "Document" WHERE title LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.query(`DELETE FROM "Diff" WHERE "issueId" LIKE $1 OR "authorLabel" = $2`, [`${TEST_PREFIX}%`, AGENT_LABEL]);
+  await pool.query(`DELETE FROM "Skill" WHERE name LIKE $1`, [`${TEST_PREFIX}%`]);
   await pool.end();
 });
 
@@ -797,5 +858,88 @@ describe('auth: findActiveApiKey', () => {
   it('returns null for missing key (empty string)', async () => {
     const agent = await findActiveApiKey(db as any, '');
     assert.equal(agent, null);
+  });
+});
+
+describe('list_skills', () => {
+  before(async () => {
+    await pool.query(
+      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-alpha`, 'Alpha desc', '# Alpha']
+    );
+    await pool.query(
+      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-beta`, 'Beta desc', '# Beta']
+    );
+  });
+
+  it('returns all skills with name and description', async () => {
+    const result = await client.callTool({ name: 'list_skills', arguments: {} });
+    const skills = parseText(result) as Array<{ name: string; description: string }>;
+    assert.ok(Array.isArray(skills));
+    const names = skills.map((s) => s.name);
+    assert.ok(names.includes(`${TEST_PREFIX}-skill-alpha`));
+    assert.ok(names.includes(`${TEST_PREFIX}-skill-beta`));
+    const alpha = skills.find((s) => s.name === `${TEST_PREFIX}-skill-alpha`);
+    assert.equal(alpha?.description, 'Alpha desc');
+  });
+
+  it('does not include prompt in list_skills response', async () => {
+    const result = await client.callTool({ name: 'list_skills', arguments: {} });
+    const skills = parseText(result) as Array<Record<string, unknown>>;
+    const alpha = skills.find((s) => s['name'] === `${TEST_PREFIX}-skill-alpha`);
+    assert.ok(alpha !== undefined);
+    assert.ok(!('prompt' in alpha));
+  });
+});
+
+describe('get_skill', () => {
+  let skillId: string;
+
+  before(async () => {
+    skillId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [skillId, `${TEST_PREFIX}-skill-with-files`, 'Skill with files', '# Main prompt']
+    );
+    await pool.query(
+      `INSERT INTO "SkillFile" (id, "skillId", name, content, "createdAt") VALUES ($1,$2,$3,$4,NOW())`,
+      [crypto.randomUUID(), skillId, 'TEMPLATE.md', '# Template content']
+    );
+  });
+
+  it('returns skill primary prompt and supporting files', async () => {
+    const result = await client.callTool({
+      name: 'get_skill',
+      arguments: { name: `${TEST_PREFIX}-skill-with-files` },
+    });
+    const data = parseText(result) as { skill: { name: string; prompt: string }; files: Array<{ name: string; content: string }> };
+    assert.equal(data.skill.name, `${TEST_PREFIX}-skill-with-files`);
+    assert.equal(data.skill.prompt, '# Main prompt');
+    assert.equal(data.files.length, 1);
+    assert.equal(data.files[0].name, 'TEMPLATE.md');
+    assert.equal(data.files[0].content, '# Template content');
+  });
+
+  it('returns skill with empty files array when no supporting files', async () => {
+    await pool.query(
+      `INSERT INTO "Skill" (id, name, description, prompt, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [crypto.randomUUID(), `${TEST_PREFIX}-skill-no-files`, 'No files', '# Solo prompt']
+    );
+    const result = await client.callTool({
+      name: 'get_skill',
+      arguments: { name: `${TEST_PREFIX}-skill-no-files` },
+    });
+    const data = parseText(result) as { skill: { name: string }; files: unknown[] };
+    assert.equal(data.skill.name, `${TEST_PREFIX}-skill-no-files`);
+    assert.deepEqual(data.files, []);
+  });
+
+  it('returns isError for unknown skill name', async () => {
+    const result = await client.callTool({
+      name: 'get_skill',
+      arguments: { name: `${TEST_PREFIX}-skill-ghost` },
+    });
+    assert.equal((result as { isError?: boolean }).isError, true);
   });
 });

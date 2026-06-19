@@ -163,6 +163,21 @@ Good tests in Forge verify external behavior through stable interfaces — not i
 
 ## Implementation Log
 
+### Issue 13 — Skill Registry (completed 2026-06-19)
+
+Humans manage prompt-based skills via the web UI; agents load them via MCP. Five default skills seeded on first use.
+
+- **Prisma schema** (`prisma/schema.prisma`): Added `Skill` model (id, name unique slug, description, prompt, createdAt, updatedAt) and `SkillFile` model (id, skillId cascade FK, name, content, createdAt; unique on [skillId, name]). Schema pushed and client regenerated.
+- **Skill service** (`lib/skills/skill-service.ts`): `Skill` and `SkillFile` interfaces; `Db` interface for testability; `createSkill`, `getSkillByName`, `getSkillById`, `listSkills`, `updateSkill`, `deleteSkill`, `addSkillFile`, `getSkillWithFiles`, `deleteSkillFile`.
+- **TDD tests** (`lib/skills/skill-service.test.ts`): 16 integration tests across 7 suites: `createSkill` (all fields, empty defaults), `getSkillByName` (found/null), `getSkillById` (found/null), `listSkills` (array/includes created), `updateSkill` (updates description+prompt, null on missing), `deleteSkill` (removed from store), `addSkillFile + getSkillWithFiles` (attaches file, returns skill+files, null on missing, empty files array), `deleteSkillFile` (removes file).
+- **API routes**: `GET/POST /api/skills` (list with auto-seed, create — human session); `GET/PATCH/DELETE /api/skills/[id]` (detail with files, update, delete — human session); `POST /api/skills/[id]/files` (add supporting file); `DELETE /api/skills/[id]/files/[fileId]` (remove file).
+- **Seed** (`lib/skills/seed-skills.ts`): `seedDefaultSkills` idempotently seeds 5 default skills on first GET /api/skills call: `to-prd`, `to-issues`, `grill-with-docs`, `tdd`, `improve-codebase-architecture` — each with a full Forge-MCP-adapted prompt.
+- **Skills UI** (`app/skills/page.tsx`): Lists all skills (name, description, last-updated); inline create form with name, description, and prompt fields; links to detail page.
+- **Skill detail UI** (`app/skills/[id]/page.tsx`): Shows skill name, description, primary prompt; inline edit form; delete with confirmation; supporting files section with add/remove per file.
+- **MCP tools** (`mcp/server.ts`): `list_skills()` — returns `[{ name, description }]` (no prompt, agents call `get_skill` to load); `get_skill(name)` — returns `{ skill: { name, prompt, ... }, files: [{ name, content }, ...] }`; isError on unknown name. Agents cannot create, update, or delete skills via MCP (write tools not exposed).
+- **MCP tests** (`mcp/server.test.ts`): Extended `makePgClient` with `skill` and `skillFile` table implementations; cleanup in `after()`; 6 new integration tests across 2 suites: `list_skills` (returns name+description, excludes prompt), `get_skill` (primary prompt + files, empty files, isError on unknown).
+- **Test count**: 200/200 pass; `tsc --noEmit` clean.
+
 ### Issue 12 — MCP Gateway: Diffs (completed 2026-06-19)
 
 Extended the MCP server with three diff tools and validated the existing `add_comment` / `list_comments` anchor handling for `diff_line` targets.
