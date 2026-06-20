@@ -1,3 +1,14 @@
+2026-06-20 Issue #23 — UI: project-scoped API key management
+  - Updated app/account/page.tsx: added Project interface and projectId field to ApiKey/NewKey interfaces.
+  - Added loadProjects() fetching GET /api/projects on mount alongside loadKeys().
+  - Added projectId state and project selector <select> dropdown to the API key creation form.
+  - Client-side validation blocks submission when no project is selected (shows "Select a project" error).
+  - POST body now includes projectId alongside label.
+  - New key banner now shows the associated project name next to the key label.
+  - Active keys table gained a Project column displaying the resolved project name.
+  - Revoked keys table also shows project name; revoke flow unchanged.
+  - 247 tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-20 Issue #22 — UI: route migration under /projects/[slug]/
   - Updated 17 API route files: replaced const projectId = '' placeholder with request.nextUrl.searchParams.get('projectId') ?? '' in all collection and [id] routes (issues, documents, diffs, skills, context).
   - Updated app/projects/[slug]/layout.tsx: added project sub-nav (Board, Documents, Skills, Context, Settings) rendered in the Server Component with slug-prefixed hrefs.

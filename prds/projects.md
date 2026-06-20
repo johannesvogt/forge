@@ -249,6 +249,18 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - Created `app/projects/[slug]/board/page.tsx`: stub board page that reads project from context and renders the project name — placeholder until issue #22 migrates the real board.
 - 247 tests pass; `tsc --noEmit` passes with zero errors.
 
+### Issue #23 — UI: project-scoped API key management (done 2026-06-20)
+
+- Updated `app/account/page.tsx`: added `Project` interface; `ApiKey` and `NewKey` now include `projectId`.
+- Added `loadProjects()` fetching `GET /api/projects` on mount; projects stored in state to resolve project names from ids.
+- Added `projectId` state and a project selector `<select>` dropdown to the creation form; dropdown is populated with all projects.
+- Client-side validation in `handleCreate` blocks submission when `projectId` is empty, surfaces "Select a project" error without making a network call.
+- `POST /api/account/api-keys` body now sends `{ label, projectId }`.
+- New key confirmation banner now shows the project name alongside the key label.
+- Active keys table gained a **Project** column; project name is resolved from the `projectId` field via the loaded project list.
+- Revoked keys section also shows project name; revoke flow (DELETE /api/account/api-keys/[id]) is unchanged.
+- 247 tests pass; `tsc --noEmit` passes with zero errors.
+
 ## Further Notes
 
 The slug is the primary human-readable identifier used in URLs. If a project is renamed, the slug should remain stable to avoid breaking bookmarks — slug is set at creation and is not updated when the name changes. This can be revisited if renaming becomes a user need.

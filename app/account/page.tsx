@@ -2,12 +2,19 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 
+interface Project {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface ApiKey {
   id: string;
   label: string;
   last4: string;
   createdAt: string;
   revokedAt: string | null;
+  projectId: string;
 }
 
 interface NewKey extends ApiKey {
@@ -16,8 +23,10 @@ interface NewKey extends ApiKey {
 
 export default function AccountPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [newKey, setNewKey] = useState<NewKey | null>(null);
   const [label, setLabel] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,24 +38,42 @@ export default function AccountPage() {
     }
   }
 
+  async function loadProjects() {
+    const res = await fetch('/api/projects');
+    if (res.ok) {
+      const data: Project[] = await res.json();
+      setProjects(data);
+    }
+  }
+
   useEffect(() => {
     loadKeys();
+    loadProjects();
   }, []);
+
+  function projectName(pid: string): string {
+    return projects.find((p) => p.id === pid)?.name ?? pid;
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
+    if (!projectId) {
+      setError('Select a project');
+      return;
+    }
     setError('');
     setCreating(true);
     const res = await fetch('/api/account/api-keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label }),
+      body: JSON.stringify({ label, projectId }),
     });
     setCreating(false);
     if (res.ok) {
       const data: NewKey = await res.json();
       setNewKey(data);
       setLabel('');
+      setProjectId('');
       loadKeys();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -75,7 +102,7 @@ export default function AccountPage() {
           immediately.
         </p>
 
-        <form onSubmit={handleCreate} className="mb-6 flex gap-2">
+        <form onSubmit={handleCreate} className="mb-6 flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             placeholder="Key label (e.g. ci-agent)"
@@ -84,6 +111,19 @@ export default function AccountPage() {
             required
             className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            required
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">Select project…</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={creating}
@@ -98,7 +138,8 @@ export default function AccountPage() {
         {newKey && (
           <div className="mb-6 rounded-md border border-green-200 bg-green-50 p-4">
             <p className="mb-1 text-sm font-medium text-green-800">
-              New key: <strong>{newKey.label}</strong> — copy it now, it won&apos;t be shown again.
+              New key: <strong>{newKey.label}</strong> ({projectName(newKey.projectId)}) — copy it
+              now, it won&apos;t be shown again.
             </p>
             <code className="block break-all rounded bg-white px-3 py-2 text-sm font-mono text-gray-900 border border-green-200">
               {newKey.key}
@@ -117,6 +158,7 @@ export default function AccountPage() {
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs font-medium uppercase text-gray-500">
                 <th className="pb-2">Label</th>
+                <th className="pb-2">Project</th>
                 <th className="pb-2">Last 4</th>
                 <th className="pb-2">Created</th>
                 <th className="pb-2"></th>
@@ -126,6 +168,7 @@ export default function AccountPage() {
               {activeKeys.map((k) => (
                 <tr key={k.id} className="border-b border-gray-100">
                   <td className="py-2 font-medium text-gray-900">{k.label}</td>
+                  <td className="py-2 text-gray-600">{projectName(k.projectId)}</td>
                   <td className="py-2 font-mono text-gray-500">…{k.last4}</td>
                   <td className="py-2 text-gray-500">
                     {new Date(k.createdAt).toLocaleDateString()}
@@ -156,6 +199,7 @@ export default function AccountPage() {
                 {revokedKeys.map((k) => (
                   <tr key={k.id} className="border-b border-gray-100">
                     <td className="py-1 line-through">{k.label}</td>
+                    <td className="py-1 text-gray-400">{projectName(k.projectId)}</td>
                     <td className="py-1 font-mono">…{k.last4}</td>
                     <td className="py-1">revoked {new Date(k.revokedAt!).toLocaleDateString()}</td>
                   </tr>
