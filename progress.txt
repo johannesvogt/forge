@@ -1,3 +1,12 @@
+2026-06-20 Issue #21 — UI: projects landing and creation
+  - Updated app/page.tsx: root / redirects to /projects.
+  - Created app/projects/page.tsx: Server Component; lists all projects as cards linking to /projects/[slug]/board; empty state when no projects exist; redirects to /login if unauthenticated.
+  - Created app/projects/new/page.tsx: Client Component; name input with live slug preview; POST /api/projects; redirects to /projects/[slug]/board on success; surfaces 409 slug-conflict error on form.
+  - Created app/projects/[slug]/project-context.tsx: ProjectProvider (client context) and useProject() hook.
+  - Created app/projects/[slug]/layout.tsx: Server Component; awaits params; fetches project; calls notFound() for unknown slugs; wraps children in ProjectProvider.
+  - Created app/projects/[slug]/board/page.tsx: stub board page consuming project context (placeholder for issue #22).
+  - 247 tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-20 Issue #20 — Project API routes
   - Created lib/api/projects.ts: parseCreateProjectBody (validates name, trims) and formatProject (returns id, name, slug, createdAt only).
   - Added lib/api/projects.test.ts: 9 unit tests covering null/missing/non-string/empty/whitespace-only name, valid name with trim, response field filtering.

@@ -222,6 +222,16 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - 237 integration tests pass across all services and MCP server suite.
 - `tsc --noEmit` passes with zero errors.
 
+### Issue #21 — UI: projects landing and creation (done 2026-06-20)
+
+- Updated `app/page.tsx`: root `/` now redirects to `/projects`.
+- Created `app/projects/page.tsx`: Server Component; calls `listProjects` via Prisma; redirects to `/login` if no session; renders project cards (linking to `/projects/[slug]/board`) or an empty state with a create link.
+- Created `app/projects/new/page.tsx`: Client Component; name input with live slug preview (pure `generateSlug` duplicated from project-service); `POST /api/projects` on submit; redirects to `/projects/[slug]/board` on success; surfaces 409 slug-conflict error on the form.
+- Created `app/projects/[slug]/project-context.tsx`: `ProjectProvider` (Client Component wrapping `React.createContext`) and `useProject()` hook for consuming project data in child client components.
+- Created `app/projects/[slug]/layout.tsx`: Server Component; awaits `params`; calls `getProject`; calls `notFound()` for unknown slugs; wraps children in `ProjectProvider` with serialised project shape.
+- Created `app/projects/[slug]/board/page.tsx`: stub board page that reads project from context and renders the project name — placeholder until issue #22 migrates the real board.
+- 247 tests pass; `tsc --noEmit` passes with zero errors.
+
 ## Further Notes
 
 The slug is the primary human-readable identifier used in URLs. If a project is renamed, the slug should remain stable to avoid breaking bookmarks — slug is set at creation and is not updated when the name changes. This can be revisited if renaming becomes a user need.
