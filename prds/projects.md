@@ -199,6 +199,16 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - Added cross-project isolation test to `mcp/server.test.ts`: two in-memory servers constructed with different `projectId`s; issue created via server B is not visible when listing issues on server A, and is visible on server B.
 - 238 integration tests pass; `tsc --noEmit` passes with zero errors.
 
+### Issue #20 — Project API routes (done 2026-06-20)
+
+- Created `lib/api/projects.ts` with `parseCreateProjectBody` (input validation) and `formatProject` (response shaping).
+- Added `lib/api/projects.test.ts` with 9 unit tests covering all validation edge cases and response field exposure.
+- Created `app/api/projects/route.ts`: `GET` lists all projects; `POST` creates a project (validates name, returns 201 with `{ id, name, slug, createdAt }`, returns 409 on slug conflict).
+- Created `app/api/projects/[slug]/route.ts`: `GET` returns a project by slug or 404; `DELETE` deletes by slug (404 if not found, 204 on success).
+- All 4 routes require a user session; unauthenticated requests return 401.
+- API key routes (`POST /api/account/api-keys`, `GET /api/account/api-keys`) were already done in issue #17.
+- 247 tests pass (9 new unit tests added); `tsc --noEmit` passes with zero errors.
+
 ### Issue #18 — Domain services project scoping (done 2026-06-19)
 
 - All 5 domain services updated: `issue-service`, `document-service`, `diff-service`, `skill-service`, `context-service`.

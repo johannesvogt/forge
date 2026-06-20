@@ -1,3 +1,11 @@
+2026-06-20 Issue #20 — Project API routes
+  - Created lib/api/projects.ts: parseCreateProjectBody (validates name, trims) and formatProject (returns id, name, slug, createdAt only).
+  - Added lib/api/projects.test.ts: 9 unit tests covering null/missing/non-string/empty/whitespace-only name, valid name with trim, response field filtering.
+  - Created app/api/projects/route.ts: GET lists all projects; POST validates name, creates project via project-service, returns 201; 409 on SlugConflictError; 401 without session.
+  - Created app/api/projects/[slug]/route.ts: GET returns project by slug or 404; DELETE deletes by slug (404 if not found, 204 on success); 401 without session.
+  - API key routes (POST/GET /api/account/api-keys) already completed in issue #17.
+  - 247 tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-20 Issue #19 — MCP project scoping
   - createMcpServer(db, agentLabel, projectId) and mcp/index.ts projectId exit guard already in place from issue #18.
   - All 18 MCP tools confirmed forwarding projectId to the service layer.
