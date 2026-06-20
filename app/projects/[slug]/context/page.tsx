@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useProject } from '../project-context';
 
 interface ProjectContext {
   id: string;
@@ -11,6 +12,7 @@ interface ProjectContext {
 }
 
 export default function ContextPage() {
+  const { id: projectId } = useProject();
   const [ctx, setCtx] = useState<ProjectContext | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -21,7 +23,7 @@ export default function ContextPage() {
 
   const fetchContext = useCallback(async () => {
     try {
-      const res = await fetch('/api/context');
+      const res = await fetch(`/api/context?projectId=${projectId}`);
       if (!res.ok) throw new Error('Failed to load context');
       setCtx(await res.json());
     } catch (e) {
@@ -29,7 +31,7 @@ export default function ContextPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => { fetchContext(); }, [fetchContext]);
 
@@ -49,7 +51,7 @@ export default function ContextPage() {
     setSaving(true);
     setWarning(null);
     try {
-      const res = await fetch('/api/context', {
+      const res = await fetch(`/api/context?projectId=${projectId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: draft }),

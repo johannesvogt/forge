@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useProject } from '../../project-context';
 
 const COLUMNS = [
   { id: 'BACKLOG', label: 'Backlog' },
@@ -65,6 +66,7 @@ interface LinkedDiff {
 
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { id: projectId, slug } = useProject();
   const router = useRouter();
 
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -97,8 +99,8 @@ export default function IssueDetailPage() {
 
   const fetchIssue = useCallback(async () => {
     try {
-      const res = await fetch(`/api/issues/${id}`);
-      if (res.status === 404) { router.push('/board'); return; }
+      const res = await fetch(`/api/issues/${id}?projectId=${projectId}`);
+      if (res.status === 404) { router.push(`/projects/${slug}/board`); return; }
       if (!res.ok) throw new Error('Failed to fetch issue');
       setIssue(await res.json());
     } catch (e) {
@@ -106,37 +108,37 @@ export default function IssueDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, router]);
+  }, [id, projectId, slug, router]);
 
   const fetchComments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/issues/${id}/comments`);
+      const res = await fetch(`/api/issues/${id}/comments?projectId=${projectId}`);
       if (!res.ok) return;
       setComments(await res.json());
     } catch {
-      // non-critical — comments fail silently
+      // non-critical
     }
-  }, [id]);
+  }, [id, projectId]);
 
   const fetchDocuments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/issues/${id}/documents`);
+      const res = await fetch(`/api/issues/${id}/documents?projectId=${projectId}`);
       if (!res.ok) return;
       setDocuments(await res.json());
     } catch {
-      // non-critical — documents fail silently
+      // non-critical
     }
-  }, [id]);
+  }, [id, projectId]);
 
   const fetchDiffs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/issues/${id}/diffs`);
+      const res = await fetch(`/api/issues/${id}/diffs?projectId=${projectId}`);
       if (!res.ok) return;
       setDiffs(await res.json());
     } catch {
-      // non-critical — diffs fail silently
+      // non-critical
     }
-  }, [id]);
+  }, [id, projectId]);
 
   useEffect(() => {
     fetchIssue();
@@ -150,7 +152,7 @@ export default function IssueDetailPage() {
     setMoving(target);
     setMoveError(null);
     try {
-      const res = await fetch(`/api/issues/${id}/move`, {
+      const res = await fetch(`/api/issues/${id}/move?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ column: target }),
@@ -173,7 +175,7 @@ export default function IssueDetailPage() {
     setDocSubmitting(true);
     setDocError(null);
     try {
-      const res = await fetch('/api/documents', {
+      const res = await fetch(`/api/documents?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: docTitle.trim(), content: docContent, issueId: id }),
@@ -200,7 +202,7 @@ export default function IssueDetailPage() {
     setSubmitting(true);
     setCommentError(null);
     try {
-      const res = await fetch(`/api/issues/${id}/comments`, {
+      const res = await fetch(`/api/issues/${id}/comments?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: commentBody.trim() }),
@@ -237,7 +239,7 @@ export default function IssueDetailPage() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4">
-        <Link href="/board" className="text-sm text-indigo-600 hover:underline">
+        <Link href={`/projects/${slug}/board`} className="text-sm text-indigo-600 hover:underline">
           ← Board
         </Link>
       </div>
@@ -310,7 +312,7 @@ export default function IssueDetailPage() {
             {documents.map((doc) => (
               <Link
                 key={doc.id}
-                href={`/documents/${doc.id}`}
+                href={`/projects/${slug}/documents/${doc.id}`}
                 className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-indigo-300 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -379,7 +381,7 @@ export default function IssueDetailPage() {
             {diffs.map((diff) => (
               <Link
                 key={diff.id}
-                href={`/diffs/${diff.id}`}
+                href={`/projects/${slug}/diffs/${diff.id}`}
                 className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-indigo-300 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -405,7 +407,7 @@ export default function IssueDetailPage() {
               setDiffSubmitting(true);
               setDiffError(null);
               try {
-                const res = await fetch('/api/diffs', {
+                const res = await fetch(`/api/diffs?projectId=${projectId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({

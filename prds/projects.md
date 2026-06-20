@@ -222,6 +222,23 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - 237 integration tests pass across all services and MCP server suite.
 - `tsc --noEmit` passes with zero errors.
 
+### Issue #22 — UI: route migration under /projects/[slug]/ (done 2026-06-20)
+
+- Updated all 17 API route files that had `projectId = ''` placeholders: each route now reads `projectId` from the `?projectId=` query parameter instead of using a hardcoded empty string. Collection GETs (issues, skills, context) now forward the correct project scope; `[id]` routes for issues, documents, diffs, and skills all read the `?projectId=` param as well.
+- Updated `app/projects/[slug]/layout.tsx`: added project-scoped sub-navigation bar (Board, Documents, Skills, Context, Settings) rendered in the Server Component using the resolved `slug`.
+- Updated `app/layout.tsx` root nav: replaced stale resource links (Board, Documents, Diffs, Skills, Context) with a single "Projects" link to `/projects`.
+- Created `app/projects/[slug]/board/page.tsx`: full board with kanban columns, issue creation form, links to `…/board/[id]` — passes `?projectId=` on every API call.
+- Created `app/projects/[slug]/board/[id]/page.tsx`: full issue detail — move transitions, inline document and diff upload, comment thread — all fetch calls scoped by `?projectId=`.
+- Created `app/projects/[slug]/documents/page.tsx`: stub that directs users to issue pages where documents are created.
+- Created `app/projects/[slug]/documents/[id]/page.tsx`: full document viewer with version history, inline commenting, version diff — fetches pass `?projectId=`.
+- Created `app/projects/[slug]/diffs/[id]/page.tsx`: full diff viewer with diff2html rendering and line-level comments — diff fetch scoped by `?projectId=`.
+- Created `app/projects/[slug]/skills/page.tsx`: skills list with inline create form — all fetches pass `?projectId=`.
+- Created `app/projects/[slug]/skills/[id]/page.tsx`: skill detail with edit, delete, and file management — all fetches pass `?projectId=`.
+- Created `app/projects/[slug]/context/page.tsx`: project context view/edit — fetches scoped by `?projectId=`.
+- Created `app/projects/[slug]/settings/page.tsx`: project settings page with a delete-project button (confirmation dialog → `DELETE /api/projects/[slug]` → redirect to `/projects`).
+- Deleted old top-level routes: `app/board/`, `app/documents/`, `app/diffs/`, `app/skills/`, `app/context/`.
+- 247 tests pass; `tsc --noEmit` passes with zero errors.
+
 ### Issue #21 — UI: projects landing and creation (done 2026-06-20)
 
 - Updated `app/page.tsx`: root `/` now redirects to `/projects`.

@@ -8,8 +8,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   const skill = await getSkillById(prisma as any, projectId, id);
   if (!skill) return NextResponse.json({ error: 'Skill not found' }, { status: 404 });

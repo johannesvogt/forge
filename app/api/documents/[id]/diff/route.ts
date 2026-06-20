@@ -26,8 +26,7 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid version numbers' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const diff = await diffDocumentVersions(prisma as any, projectId, id, fromVersion, toVersion);
   if (diff === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 

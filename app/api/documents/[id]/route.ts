@@ -11,8 +11,7 @@ export async function GET(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   const versionParam = request.nextUrl.searchParams.get('version');
 

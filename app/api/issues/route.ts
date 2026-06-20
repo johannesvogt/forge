@@ -18,8 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid column' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const issues = await listIssues(prisma as any, projectId, column);
   return NextResponse.json(issues);
 }
@@ -35,8 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const issue = await createIssue(prisma as any, projectId, {
     title: body.title.trim(),
     description: typeof body.description === 'string' ? body.description : '',

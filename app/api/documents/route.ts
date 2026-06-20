@@ -42,8 +42,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'title, content, and issueId are required' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const doc = await createDocument(prisma as any, projectId, {
     title: body.title.trim(),
     content: body.content,

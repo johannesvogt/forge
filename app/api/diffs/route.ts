@@ -47,8 +47,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const diff = await uploadDiff(prisma as any, projectId, {
     title: body.title.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,

@@ -15,12 +15,11 @@ async function seedFromFile(): Promise<string> {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   let ctx = await getProjectContext(prisma as any, projectId);
   if (!ctx) {
     const content = await seedFromFile();
@@ -44,8 +43,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const userName = (session.user as { name?: string }).name ?? session.user.id;
   const { context, warning } = await updateProjectContext(prisma as any, projectId, {
     content: body.content,

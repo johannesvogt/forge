@@ -4,12 +4,11 @@ import { authOptions } from '@/lib/auth/nextauth-config';
 import { createSkill, listSkills } from '@/lib/skills/skill-service';
 import { prisma } from '@/lib/prisma';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const skills = await listSkills(prisma as any, projectId);
   return NextResponse.json(skills);
 }
@@ -23,8 +22,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const skill = await createSkill(prisma as any, projectId, {
     name: body.name.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,

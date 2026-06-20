@@ -9,11 +9,7 @@ export const metadata: Metadata = {
 };
 
 const navItems = [
-  { href: '/board', label: 'Board' },
-  { href: '/documents', label: 'Documents' },
-  { href: '/diffs', label: 'Diffs' },
-  { href: '/skills', label: 'Skills' },
-  { href: '/context', label: 'Context' },
+  { href: '/projects', label: 'Projects' },
 ];
 
 export default function RootLayout({

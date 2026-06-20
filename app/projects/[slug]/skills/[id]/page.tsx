@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useProject } from '../../project-context';
 
 interface SkillFile {
   id: string;
@@ -26,6 +27,7 @@ interface SkillDetail {
 
 export default function SkillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { id: projectId, slug } = useProject();
   const router = useRouter();
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +47,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
 
   const fetchDetail = useCallback(async () => {
     try {
-      const res = await fetch(`/api/skills/${id}`);
+      const res = await fetch(`/api/skills/${id}?projectId=${projectId}`);
       if (!res.ok) throw new Error('Skill not found');
       const data = await res.json();
       setDetail(data);
@@ -56,7 +58,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, projectId]);
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
@@ -64,7 +66,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch(`/api/skills/${id}`, {
+      const res = await fetch(`/api/skills/${id}?projectId=${projectId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: editDescription, prompt: editPrompt }),
@@ -84,9 +86,9 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     if (!confirm(`Delete skill "${detail?.skill.name}"? This cannot be undone.`)) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/skills/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/skills/${id}?projectId=${projectId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete');
-      router.push('/skills');
+      router.push(`/projects/${slug}/skills`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
       setDeleting(false);
@@ -98,7 +100,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
     if (!newFileName.trim()) return;
     setAddingFile(true);
     try {
-      const res = await fetch(`/api/skills/${id}/files`, {
+      const res = await fetch(`/api/skills/${id}/files?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newFileName.trim(), content: newFileContent }),
@@ -119,7 +121,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   async function handleDeleteFile(fileId: string, fileName: string) {
     if (!confirm(`Delete file "${fileName}"?`)) return;
     try {
-      const res = await fetch(`/api/skills/${id}/files/${fileId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/skills/${id}/files/${fileId}?projectId=${projectId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete file');
       setDetail((prev) => prev ? { ...prev, files: prev.files.filter((f) => f.id !== fileId) } : prev);
     } catch (e) {
@@ -136,7 +138,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="max-w-3xl">
       <div className="mb-4">
-        <Link href="/skills" className="text-sm text-indigo-600 hover:underline">← Skills</Link>
+        <Link href={`/projects/${slug}/skills`} className="text-sm text-indigo-600 hover:underline">← Skills</Link>
       </div>
 
       <div className="mb-6 flex items-start justify-between">

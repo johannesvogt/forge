@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import 'diff2html/bundles/css/diff2html.min.css';
+import { useProject } from '../../project-context';
 
 interface DiffDetail {
   id: string;
@@ -28,11 +29,12 @@ interface LineComment {
 }
 
 interface CommentsByLine {
-  [key: string]: LineComment[]; // key = `${filePath}:${lineNumber}`
+  [key: string]: LineComment[];
 }
 
 export default function DiffViewerPage() {
   const { id } = useParams<{ id: string }>();
+  const { id: projectId, slug } = useProject();
   const [diff, setDiff] = useState<DiffDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export default function DiffViewerPage() {
 
   const fetchDiff = useCallback(async () => {
     try {
-      const res = await fetch(`/api/diffs/${id}`);
+      const res = await fetch(`/api/diffs/${id}?projectId=${projectId}`);
       if (res.status === 404) {
         setError('Diff not found.');
         return;
@@ -58,7 +60,7 @@ export default function DiffViewerPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, projectId]);
 
   const fetchComments = useCallback(async () => {
     try {
@@ -98,14 +100,12 @@ export default function DiffViewerPage() {
     });
   }, [diff]);
 
-  // After diff renders, inject comment indicators and click handlers
   useEffect(() => {
     if (!diffContainerRef.current || !diff) return;
 
     const container = diffContainerRef.current;
 
     const addHandlers = () => {
-      // Each file block has a header with the file name
       const fileHeaders = container.querySelectorAll('.d2h-file-header .d2h-file-name');
       fileHeaders.forEach((header) => {
         const filePath = header.textContent?.trim() ?? '';
@@ -117,7 +117,6 @@ export default function DiffViewerPage() {
           const lineNoCell = row.querySelector('.d2h-code-linenumber, .d2h-del-linenumber, .d2h-ins-linenumber');
           if (!lineNoCell) return;
 
-          // Try to get the line number from the cell text or data attribute
           const lineNumText = lineNoCell.textContent?.trim();
           const lineNumber = lineNumText ? parseInt(lineNumText, 10) : NaN;
           if (isNaN(lineNumber) || lineNumber <= 0) return;
@@ -125,11 +124,9 @@ export default function DiffViewerPage() {
           const key = `${filePath}:${lineNumber}`;
           const existingComments = commentsByLine[key] ?? [];
 
-          // Remove previous indicator if any
           const prev = row.querySelector('.forge-comment-indicator');
           if (prev) prev.remove();
 
-          // Add indicator badge if there are comments
           if (existingComments.length > 0) {
             const badge = document.createElement('span');
             badge.className = 'forge-comment-indicator';
@@ -144,7 +141,6 @@ export default function DiffViewerPage() {
             lineNoCell.appendChild(badge);
           }
 
-          // Click on row to open comment form
           (row as HTMLElement).style.cursor = 'pointer';
           row.addEventListener('click', () => {
             setCommentForm({ filePath, lineNumber });
@@ -155,7 +151,6 @@ export default function DiffViewerPage() {
       });
     };
 
-    // Run after diff2html renders
     const timer = setTimeout(addHandlers, 100);
     return () => clearTimeout(timer);
   }, [diff, commentsByLine]);
@@ -217,7 +212,7 @@ export default function DiffViewerPage() {
   return (
     <div className="max-w-5xl">
       <div className="mb-4">
-        <Link href={`/board/${diff.issueId}`} className="text-sm text-indigo-600 hover:underline">
+        <Link href={`/projects/${slug}/board/${diff.issueId}`} className="text-sm text-indigo-600 hover:underline">
           ← Issue
         </Link>
       </div>
@@ -237,7 +232,6 @@ export default function DiffViewerPage() {
         </p>
       </div>
 
-      {/* Comment form panel */}
       {commentForm && (
         <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
           <p className="mb-2 text-xs font-medium text-indigo-700">
@@ -268,7 +262,6 @@ export default function DiffViewerPage() {
         </div>
       )}
 
-      {/* Thread panel */}
       {activeThread && (
         <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
           <div className="mb-2 flex items-center justify-between">

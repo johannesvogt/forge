@@ -32,7 +32,7 @@ async function resolveAuthor(
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
@@ -40,8 +40,7 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -59,8 +58,7 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   const issue = await getIssue(prisma as any, projectId, id);
   if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });

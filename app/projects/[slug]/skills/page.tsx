@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useProject } from '../project-context';
 
 interface Skill {
   id: string;
@@ -13,6 +14,7 @@ interface Skill {
 }
 
 export default function SkillsPage() {
+  const { id: projectId, slug } = useProject();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export default function SkillsPage() {
 
   const fetchSkills = useCallback(async () => {
     try {
-      const res = await fetch('/api/skills');
+      const res = await fetch(`/api/skills?projectId=${projectId}`);
       if (!res.ok) throw new Error('Failed to fetch skills');
       setSkills(await res.json());
     } catch (e) {
@@ -32,7 +34,7 @@ export default function SkillsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
 
@@ -41,7 +43,7 @@ export default function SkillsPage() {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch('/api/skills', {
+      const res = await fetch(`/api/skills?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName.trim(), description: newDescription, prompt: newPrompt }),
@@ -132,7 +134,7 @@ export default function SkillsPage() {
           {skills.map((skill) => (
             <Link
               key={skill.id}
-              href={`/skills/${skill.id}`}
+              href={`/projects/${slug}/skills/${skill.id}`}
               className="block rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all"
             >
               <div className="flex items-start justify-between">

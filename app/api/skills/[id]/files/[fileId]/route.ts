@@ -5,14 +5,13 @@ import { deleteSkillFile } from '@/lib/skills/skill-service';
 import { prisma } from '@/lib/prisma';
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; fileId: string }> }
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // TODO(issue #20): resolve projectId from URL slug
-  const projectId = '';
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { fileId } = await params;
   await deleteSkillFile(prisma as any, projectId, fileId);
   return new NextResponse(null, { status: 204 });

@@ -1,3 +1,18 @@
+2026-06-20 Issue #22 — UI: route migration under /projects/[slug]/
+  - Updated 17 API route files: replaced const projectId = '' placeholder with request.nextUrl.searchParams.get('projectId') ?? '' in all collection and [id] routes (issues, documents, diffs, skills, context).
+  - Updated app/projects/[slug]/layout.tsx: added project sub-nav (Board, Documents, Skills, Context, Settings) rendered in the Server Component with slug-prefixed hrefs.
+  - Updated app/layout.tsx: replaced old nav items (Board, Documents, Diffs, Skills, Context) with single Projects link.
+  - Replaced stub app/projects/[slug]/board/page.tsx with full kanban board; all API calls pass ?projectId=.
+  - Created app/projects/[slug]/board/[id]/page.tsx: full issue detail (move, documents, diffs, comments); links to project-scoped document and diff URLs.
+  - Created app/projects/[slug]/documents/page.tsx: stub directing users to issue pages.
+  - Created app/projects/[slug]/documents/[id]/page.tsx: full document viewer (versions, inline comments, diff); fetches scoped by ?projectId=.
+  - Created app/projects/[slug]/diffs/[id]/page.tsx: full diff viewer with diff2html and line comments; diff fetch scoped by ?projectId=.
+  - Created app/projects/[slug]/skills/page.tsx and skills/[id]/page.tsx: full skills list and detail; all fetches pass ?projectId=.
+  - Created app/projects/[slug]/context/page.tsx: context view/edit; fetches scoped by ?projectId=.
+  - Created app/projects/[slug]/settings/page.tsx: settings page with delete-project button (confirm → DELETE /api/projects/[slug] → redirect /projects).
+  - Deleted app/board/, app/documents/, app/diffs/, app/skills/, app/context/ (old top-level routes).
+  - 247 tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-20 Issue #21 — UI: projects landing and creation
   - Updated app/page.tsx: root / redirects to /projects.
   - Created app/projects/page.tsx: Server Component; lists all projects as cards linking to /projects/[slug]/board; empty state when no projects exist; redirects to /login if unauthenticated.

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useProject } from '../../project-context';
 
 interface Document {
   id: string;
@@ -45,6 +46,7 @@ interface SelectionState {
 
 export default function DocumentViewerPage() {
   const { id } = useParams<{ id: string }>();
+  const { id: projectId, slug } = useProject();
   const [doc, setDoc] = useState<Document | null>(null);
   const [versions, setVersions] = useState<VersionSummary[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
@@ -56,7 +58,6 @@ export default function DocumentViewerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Inline comment state
   const [comments, setComments] = useState<InlineComment[]>([]);
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [newCommentBody, setNewCommentBody] = useState('');
@@ -64,9 +65,8 @@ export default function DocumentViewerPage() {
   const [activeAnchor, setActiveAnchor] = useState<{ start: number; end: number } | null>(null);
   const contentRef = useRef<HTMLPreElement>(null);
 
-  // Load version list once
   useEffect(() => {
-    fetch(`/api/documents/${id}/versions`)
+    fetch(`/api/documents/${id}/versions?projectId=${projectId}`)
       .then(async (res) => {
         if (!res.ok) return;
         const vs: VersionSummary[] = await res.json();
@@ -77,16 +77,15 @@ export default function DocumentViewerPage() {
         }
       })
       .catch(() => {});
-  }, [id]);
+  }, [id, projectId]);
 
-  // Load document content for selected version (or latest)
   useEffect(() => {
     setLoading(true);
     setError(null);
     const url =
       selectedVersion !== null
-        ? `/api/documents/${id}?version=${selectedVersion}`
-        : `/api/documents/${id}`;
+        ? `/api/documents/${id}?projectId=${projectId}&version=${selectedVersion}`
+        : `/api/documents/${id}?projectId=${projectId}`;
     fetch(url)
       .then(async (res) => {
         if (res.status === 404) { setError('Document not found.'); return; }
@@ -95,9 +94,8 @@ export default function DocumentViewerPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error'))
       .finally(() => setLoading(false));
-  }, [id, selectedVersion]);
+  }, [id, projectId, selectedVersion]);
 
-  // Load inline comments for current version
   useEffect(() => {
     if (!doc) return;
     const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
@@ -113,7 +111,7 @@ export default function DocumentViewerPage() {
   function loadDiff() {
     setDiffLoading(true);
     setDiffText(null);
-    fetch(`/api/documents/${id}/diff?from=${diffFrom}&to=${diffTo}`)
+    fetch(`/api/documents/${id}/diff?projectId=${projectId}&from=${diffFrom}&to=${diffTo}`)
       .then(async (res) => {
         if (!res.ok) { setDiffText('Could not compute diff.'); return; }
         const data = await res.json();
@@ -131,7 +129,6 @@ export default function DocumentViewerPage() {
     }
     const range = sel.getRangeAt(0);
     const preEl = contentRef.current;
-    // Compute character offsets relative to the pre element's text content
     const preRange = window.document.createRange();
     preRange.selectNodeContents(preEl);
     preRange.setEnd(range.startContainer, range.startOffset);
@@ -188,20 +185,17 @@ export default function DocumentViewerPage() {
     }
   }
 
-  // Render content with highlighted comment ranges
   function renderAnnotatedContent(content: string) {
     if (comments.length === 0) {
       return <span>{content}</span>;
     }
 
-    // Build list of annotated ranges (open comments only for highlighting)
     const ranges = comments
       .filter((c) => c.anchorStart !== null && c.anchorEnd !== null)
       .map((c) => ({ start: c.anchorStart!, end: c.anchorEnd!, comment: c }));
 
     if (ranges.length === 0) return <span>{content}</span>;
 
-    // Collect all boundary points and split content into segments
     const boundaries = new Set<number>([0, content.length]);
     for (const r of ranges) {
       boundaries.add(Math.max(0, r.start));
@@ -267,13 +261,12 @@ export default function DocumentViewerPage() {
   return (
     <div className="max-w-5xl">
       <div className="mb-4">
-        <Link href="/board" className="text-sm text-indigo-600 hover:underline">
+        <Link href={`/projects/${slug}/board`} className="text-sm text-indigo-600 hover:underline">
           ← Board
         </Link>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        {/* Header */}
         <div className="mb-4 flex items-start justify-between gap-4">
           <h1 className="text-xl font-semibold text-gray-900">{doc.title}</h1>
           <span className="flex-shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
@@ -284,7 +277,6 @@ export default function DocumentViewerPage() {
           Last updated {new Date(doc.updatedAt).toLocaleString()}
         </div>
 
-        {/* Tabs */}
         {versions.length > 1 && (
           <div className="mt-4 flex gap-2 border-b border-gray-100 pb-2">
             <button
@@ -304,7 +296,6 @@ export default function DocumentViewerPage() {
 
         {tab === 'view' && (
           <div className="mt-4 flex gap-4">
-            {/* Version history sidebar */}
             {versions.length > 0 && (
               <div className="w-48 flex-shrink-0">
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">History</p>
@@ -332,7 +323,6 @@ export default function DocumentViewerPage() {
               </div>
             )}
 
-            {/* Content + inline comment UI */}
             <div className="min-w-0 flex-1">
               <p className="mb-2 text-xs text-gray-400">Select text to add an inline comment.</p>
               <div className="relative border-t border-gray-100 pt-4">
@@ -344,7 +334,6 @@ export default function DocumentViewerPage() {
                   {renderAnnotatedContent(doc.content)}
                 </pre>
 
-                {/* Floating comment form on selection */}
                 {selection && (
                   <div
                     className="absolute z-10 w-72 rounded-lg border border-gray-200 bg-white p-3 shadow-lg"
@@ -378,7 +367,6 @@ export default function DocumentViewerPage() {
                 )}
               </div>
 
-              {/* Active anchor comment thread */}
               {activeAnchor && activeComments.length > 0 && (
                 <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
                   <div className="mb-2 flex items-center justify-between">
@@ -430,7 +418,6 @@ export default function DocumentViewerPage() {
                 </div>
               )}
 
-              {/* Comment legend */}
               {comments.length > 0 && !activeAnchor && (
                 <div className="mt-4 rounded border border-gray-100 bg-gray-50 px-3 py-2">
                   <p className="text-xs text-gray-500">
