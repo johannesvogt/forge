@@ -191,6 +191,14 @@ Integration tests hit a real database (test Postgres instance). No mocks for the
 - `tsc --noEmit` passes with zero errors.
 - Existing tests that INSERT without `projectId` now fail with a not-null constraint violation — this is expected and will be fixed in issues #17/#18 when the service layer is updated.
 
+### Issue #19 — MCP project scoping (done 2026-06-20)
+
+- `createMcpServer(db, agentLabel, projectId)` signature already in place from issue #18.
+- All 18 MCP tools (`list_issues`, `get_issue`, `create_issue`, `update_issue`, `move_issue`, `list_comments`, `add_comment`, `create_doc`, `get_doc`, `update_doc`, `list_docs`, `upload_diff`, `get_diff`, `list_diffs`, `list_skills`, `get_skill`, `get_project_context`, `update_project_context`) forward `projectId` to the service layer.
+- `mcp/index.ts` exits with a non-zero code and descriptive error if the resolved API key has no `projectId`.
+- Added cross-project isolation test to `mcp/server.test.ts`: two in-memory servers constructed with different `projectId`s; issue created via server B is not visible when listing issues on server A, and is visible on server B.
+- 238 integration tests pass; `tsc --noEmit` passes with zero errors.
+
 ### Issue #18 — Domain services project scoping (done 2026-06-19)
 
 - All 5 domain services updated: `issue-service`, `document-service`, `diff-service`, `skill-service`, `context-service`.

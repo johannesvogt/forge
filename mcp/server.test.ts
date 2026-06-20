@@ -1113,3 +1113,41 @@ describe('update_project_context', () => {
     assert.ok(data.warning!.includes('1000 tokens'));
   });
 });
+
+describe('cross-project isolation', () => {
+  let projectBId: string;
+  let clientB: Client;
+
+  before(async () => {
+    projectBId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO "Project" (id, name, slug, "createdByUserId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`,
+      [projectBId, `MCP Test B ${TEST_PREFIX}`, `mcp-b-${TEST_PREFIX}`, testUserId]
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const serverB = createMcpServer(db, AGENT_LABEL, projectBId);
+    await serverB.connect(serverTransport);
+    clientB = new Client({ name: 'test-client-b', version: '1.0.0' }, {});
+    await clientB.connect(clientTransport);
+  });
+
+  after(async () => {
+    await pool.query(`DELETE FROM "Project" WHERE id = $1`, [projectBId]);
+  });
+
+  it('list_issues on server A does not return issues created via server B', async () => {
+    const createResult = await clientB.callTool({
+      name: 'create_issue',
+      arguments: { title: `${TEST_PREFIX}-cross-project-issue` },
+    });
+    const created = parseText(createResult) as { id: string };
+
+    const listA = await client.callTool({ name: 'list_issues', arguments: {} });
+    const issuesA = parseText(listA) as Array<{ id: string }>;
+    assert.ok(!issuesA.some((i) => i.id === created.id), 'project A server must not see project B issue');
+
+    const listB = await clientB.callTool({ name: 'list_issues', arguments: {} });
+    const issuesB = parseText(listB) as Array<{ id: string }>;
+    assert.ok(issuesB.some((i) => i.id === created.id), 'project B server must see its own issue');
+  });
+});

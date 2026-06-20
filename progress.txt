@@ -1,3 +1,9 @@
+2026-06-20 Issue #19 — MCP project scoping
+  - createMcpServer(db, agentLabel, projectId) and mcp/index.ts projectId exit guard already in place from issue #18.
+  - All 18 MCP tools confirmed forwarding projectId to the service layer.
+  - Added cross-project isolation test to mcp/server.test.ts: two in-memory servers with different projectIds; issue created on server B is not visible on server A.
+  - 238 integration tests pass; tsc --noEmit passes with zero errors.
+
 2026-06-19 Issue #18 — Domain services project scoping
   - Updated issue-service, document-service, diff-service, skill-service, context-service: all public functions gained projectId as 2nd param; all DB queries scoped by projectId.
   - context-service: removed singleton pattern; switched to per-project upsert via ON CONFLICT ("projectId").
