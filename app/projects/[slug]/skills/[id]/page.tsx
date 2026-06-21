@@ -44,6 +44,7 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
   const [addingFile, setAddingFile] = useState(false);
 
   const [deleting, setDeleting] = useState(false);
+  const [reloading, setReloading] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -79,6 +80,27 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleReloadSeed() {
+    if (!confirm(`Reload seed for "${detail?.skill.name}"? Current description and prompt will be overwritten.`)) return;
+    setReloading(true);
+    try {
+      const res = await fetch(`/api/skills/${id}/reload-seed?projectId=${projectId}`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Failed to reload seed');
+      }
+      const data = await res.json();
+      setDetail(data);
+      setEditDescription(data.skill.description);
+      setEditPrompt(data.skill.prompt);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setReloading(false);
     }
   }
 
@@ -154,6 +176,13 @@ export default function SkillDetailPage({ params }: { params: Promise<{ id: stri
             className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
           >
             Edit
+          </button>
+          <button
+            onClick={handleReloadSeed}
+            disabled={reloading}
+            className="rounded border border-amber-300 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+          >
+            {reloading ? 'Reloading…' : 'Reload Seed'}
           </button>
           <button
             onClick={handleDelete}

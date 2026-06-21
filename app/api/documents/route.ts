@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { createDocument } from '@/lib/documents/document-service';
+import { createDocument, listDocuments } from '@/lib/documents/document-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -26,6 +26,15 @@ async function resolveAuthor(
   return null;
 }
 
+export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const docs = await listDocuments(prisma as any, projectId);
+  return NextResponse.json(docs);
+}
+
 export async function POST(request: NextRequest) {
   const author = await resolveAuthor(request);
   if (!author) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -35,18 +44,16 @@ export async function POST(request: NextRequest) {
     !body ||
     typeof body.title !== 'string' ||
     body.title.trim().length === 0 ||
-    typeof body.content !== 'string' ||
-    typeof body.issueId !== 'string' ||
-    body.issueId.trim().length === 0
+    typeof body.content !== 'string'
   ) {
-    return NextResponse.json({ error: 'title, content, and issueId are required' }, { status: 400 });
+    return NextResponse.json({ error: 'title and content are required' }, { status: 400 });
   }
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const doc = await createDocument(prisma as any, projectId, {
     title: body.title.trim(),
     content: body.content,
-    issueId: body.issueId.trim(),
+    issueId: typeof body.issueId === 'string' && body.issueId.trim().length > 0 ? body.issueId.trim() : null,
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,
   });

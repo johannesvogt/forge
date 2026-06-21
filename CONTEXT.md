@@ -4,6 +4,12 @@ Forge is an AI-first project management system where AI agents do the primary wo
 
 ## Language
 
+### Project
+
+**Project**:
+The top-level organizational unit in Forge. All issues, documents, diffs, skills, and project context belong to exactly one project. All users see all projects. Agents always operate within exactly one project, determined by their API key. Projects are created by users, never by agents.
+_Avoid_: Workspace, tenant, space, org
+
 ### Work
 
 **Issue**:

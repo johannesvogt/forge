@@ -143,17 +143,17 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
 
   server.tool(
     'create_doc',
-    'Create a new document linked to an issue',
+    'Create a new document. Optionally link to an issue via issue_id.',
     {
       title: z.string(),
       content: z.string(),
-      issue_id: z.string(),
+      issue_id: z.string().optional(),
     },
     async ({ title, content, issue_id }) => {
       const doc = await createDocument(db, projectId, {
         title,
         content,
-        issueId: issue_id,
+        issueId: issue_id ?? null,
         authorLabel: agentLabel,
         authorUserId: null,
       });

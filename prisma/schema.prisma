@@ -7,12 +7,29 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   apiKeys      ApiKey[]
+  projects     Project[]
+}
+
+model Project {
+  id              String         @id @default(cuid())
+  name            String
+  slug            String         @unique
+  createdByUserId String
+  createdBy       User           @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  apiKeys         ApiKey[]
+  issues          Issue[]
+  documents       Document[]
+  diffs           Diff[]
+  skills          Skill[]
+  projectContext  ProjectContext?
 }
 
 model ApiKey {
@@ -24,6 +41,8 @@ model ApiKey {
   revokedAt DateTime?
   userId    String
   user      User      @relation(fields: [userId], references: [id])
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Issue {
@@ -33,17 +52,19 @@ model Issue {
   column      String   @default("BACKLOG")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Comment {
-  id            String   @id @default(cuid())
-  targetType    String   // 'issue' | 'document_section' | 'diff_line'
-  targetId      String
-  body          String
-  authorUserId  String?
-  authorLabel   String
-  status        String   @default("open")
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  targetType     String
+  targetId       String
+  body           String
+  authorUserId   String?
+  authorLabel    String
+  status         String   @default("open")
+  createdAt      DateTime @default(now())
   anchorStart    Int?
   anchorEnd      Int?
   anchorFilePath String?
@@ -54,6 +75,8 @@ model Document {
   title     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   versions   DocumentVersion[]
   issueLinks DocumentIssueLink[]
@@ -90,16 +113,22 @@ model Diff {
   authorUserId String?
   authorLabel  String
   createdAt    DateTime @default(now())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Skill {
   id          String      @id @default(cuid())
-  name        String      @unique
+  name        String
   description String      @default("")
   prompt      String      @default("")
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   files       SkillFile[]
+
+  @@unique([projectId, name])
 }
 
 model SkillFile {
@@ -114,9 +143,13 @@ model SkillFile {
 }
 
 model ProjectContext {
-  id           String   @id @default("singleton")
+  id           String   @id @default(cuid())
   content      String   @default("")
   authorLabel  String   @default("system")
   authorUserId String?
   updatedAt    DateTime @updatedAt
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId])
 }

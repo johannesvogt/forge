@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 const PUBLIC_PATHS = ['/login', '/signup', '/api/auth'];
-const AGENT_API_PREFIX = '/api/agent';
+const AGENT_API_PREFIXES = ['/api/agent', '/api/mcp'];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Agent routes: Bearer auth handled in each route handler
-  if (pathname.startsWith(AGENT_API_PREFIX)) {
+  if (AGENT_API_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 

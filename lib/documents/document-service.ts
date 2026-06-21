@@ -38,7 +38,7 @@ interface RawVersion {
 interface CreateInput {
   title: string;
   content: string;
-  issueId: string;
+  issueId?: string | null;
   authorUserId?: string | null;
   authorLabel: string;
 }
@@ -89,10 +89,12 @@ export async function createDocument(db: Db, projectId: string, input: CreateInp
       authorLabel: input.authorLabel,
     },
   });
-  await db.documentIssueLink.createMany({
-    data: [{ documentId: doc.id, issueId: input.issueId }],
-    skipDuplicates: true,
-  });
+  if (input.issueId) {
+    await db.documentIssueLink.createMany({
+      data: [{ documentId: doc.id, issueId: input.issueId }],
+      skipDuplicates: true,
+    });
+  }
   return {
     id: doc.id,
     title: doc.title,
@@ -228,6 +230,12 @@ export async function diffDocumentVersions(
   if (!from || !to) return null;
 
   return computeUnifiedDiff(from.content, to.content, `v${fromVersion}`, `v${toVersion}`);
+}
+
+export async function listDocuments(db: Db, projectId: string): Promise<Document[]> {
+  const docs = await db.document.findMany({ where: { projectId } });
+  const results = await Promise.all(docs.map((d) => getDocument(db, projectId, d.id)));
+  return results.filter((d): d is Document => d !== null);
 }
 
 export async function listDocumentsByIssue(db: Db, projectId: string, issueId: string): Promise<Document[]> {
