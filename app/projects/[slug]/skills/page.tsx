@@ -23,6 +23,7 @@ export default function SkillsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
   const [creating, setCreating] = useState(false);
+  const [loadingSeeds, setLoadingSeeds] = useState(false);
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -37,6 +38,20 @@ export default function SkillsPage() {
   }, [projectId]);
 
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
+
+  async function handleLoadNewSeeds() {
+    setLoadingSeeds(true);
+    try {
+      const res = await fetch(`/api/skills/seed-new?projectId=${projectId}`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to load new seeds');
+      const { count } = await res.json();
+      if (count > 0) await fetchSkills();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setLoadingSeeds(false);
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -72,12 +87,21 @@ export default function SkillsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Skills</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-        >
-          + New Skill
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleLoadNewSeeds}
+            disabled={loadingSeeds}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loadingSeeds ? 'Loading…' : 'Load New Seeds'}
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            + New Skill
+          </button>
+        </div>
       </div>
 
       {showCreate && (

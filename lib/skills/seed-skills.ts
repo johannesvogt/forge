@@ -90,6 +90,28 @@ You are breaking down a plan, spec, or PRD into independently-grabbable issues o
 3. Call \`create_issue\` for each slice in dependency order.
 4. Call \`add_comment\` on the parent issue (or PRD document) listing the created issue IDs.
 
+## Issue types and annotation
+
+When creating an issue whose primary work is writing code (feature implementation, bug fix, refactor), prefix the description with \`implementation-issue\` on its own line. If the issue is created in the context of a PRD, include the PRD name on the same line:
+
+\`\`\`
+implementation-issue, PRD: <prd-name>
+
+<rest of description>
+\`\`\`
+
+If there is no PRD context:
+
+\`\`\`
+implementation-issue
+
+<rest of description>
+\`\`\`
+
+This annotation tells the agent picking up the issue to invoke the \`process-implementation-issue\` skill.
+
+Issues that are not implementation work (e.g. planning, writing a PRD, architecture review) must not carry this annotation.
+
 ## Output format
 
 - One Forge issue per slice, created via \`create_issue\`
@@ -252,6 +274,182 @@ You are implementing a Forge issue using test-driven development.
 - \`get_issue(id)\` — load the issue description and acceptance criteria
 - \`add_comment(target_type: "issue", ...)\` — report progress and final test count
 - \`move_issue(id, "NEEDS_HUMAN_REVIEW")\` — signal completion
+`,
+  },
+  {
+    name: 'process-implementation-issue',
+    description: 'End-to-end workflow for picking up and completing an implementation issue from the Forge board. Triggered when an issue description begins with "implementation-issue".',
+    prompt: `# process-implementation-issue
+
+An issue whose description starts with \`implementation-issue\` must be processed using this skill. Follow every step in order. Do not skip ahead.
+
+## Step 1 — Claim the issue
+
+1. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
+2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
+
+There is no assignee field — claiming via comment is the canonical pattern.
+
+## Step 2 — Read the PRD
+
+Check the first line of the issue description for a PRD reference in the format \`implementation-issue, PRD: <prd-name>\`:
+
+- If a PRD name is present, call \`list_docs\` with the issue ID, then scan for a document whose title matches the PRD name. If not found linked, search across all project documents.
+- Call \`get_doc\` to read the full PRD content.
+- If no PRD is referenced, proceed using the issue description alone.
+
+## Step 3 — Write tests first (TDD — red phase)
+
+Before writing any implementation:
+
+1. Identify the acceptance criteria from the issue (and PRD if present).
+2. Write failing tests — one test per acceptance criterion.
+3. Run the test suite and confirm each new test fails for the right reason.
+
+Do not write implementation code until the tests exist and are failing.
+
+## Step 4 — Implement (TDD — green + refactor)
+
+1. Write the minimum implementation to make the failing tests pass.
+2. Run tests — iterate until all pass.
+3. Refactor while keeping tests green.
+4. Run the full test suite and type check to confirm zero regressions:
+   - \`npm test\` (or the project's test command)
+   - \`npx tsc --noEmit\` (or the project's type-check command)
+
+Do not proceed until every test passes and there are no type errors.
+
+## Step 5 — Commit
+
+Commit all changes with a concise conventional-commit message describing what was implemented.
+
+Note the full commit SHA — you will need it in the next step.
+
+## Step 6 — Update the PRD
+
+If a PRD was loaded in Step 2, call \`update_doc\` to append an implementation summary to it. Add a section at the end of the existing content:
+
+\`\`\`
+## Implementation
+
+- What was implemented (bullet list, one item per feature or acceptance criterion)
+- Commit: <SHA>
+\`\`\`
+
+Do not rewrite the PRD body — only append this section.
+
+## Step 7 — Comment on the issue
+
+Call \`add_comment\` on the issue (\`target_type: "issue"\`) with a brief implementation note. Include:
+
+- What was implemented (bullet list, one item per feature or acceptance criterion)
+- The git commit SHA
+
+Example:
+\`\`\`
+Implemented:
+- Added X to handle Y
+- Updated Z to support W
+
+Commit: abc1234def5678
+\`\`\`
+
+## Step 8 — Move to Needs Agent Review
+
+Call \`move_issue\` with \`column: "NEEDS_AGENT_REVIEW"\`.
+
+A separate agent will review the work with fresh context.
+
+---
+
+## Reference: MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| \`get_issue\` | Read the issue description and acceptance criteria |
+| \`move_issue\` | Move the issue to a new column |
+| \`add_comment\` | Post a comment to the issue |
+| \`list_docs\` | List documents linked to the issue |
+| \`get_doc\` | Read a document (e.g. the PRD) |
+
+## Reference: Valid column names for move_issue
+
+\`TODO\` → \`IN_PROGRESS\` → \`NEEDS_AGENT_REVIEW\`
+`,
+  },
+  {
+    name: 'process-general-issue',
+    description: 'Workflow for picking up and completing a non-implementation issue from the Forge board (planning, research, writing, architecture, etc.).',
+    prompt: `# process-general-issue
+
+Use this skill for any issue that is NOT annotated with \`implementation-issue\`. Follow every step in order.
+
+## Step 1 — Claim the issue
+
+1. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
+2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
+
+## Step 2 — Read the PRD (if referenced)
+
+Check the issue description for a PRD reference (a document ID, title, or phrase like "see PRD"):
+
+- Call \`list_docs\` with the issue ID to find linked documents.
+- If a PRD is found or referenced by name, call \`get_doc\` to read its full content.
+- If no PRD is referenced, proceed using the issue description alone.
+
+## Step 3 — Do the work
+
+Read the issue description carefully and follow its instructions. The issue may ask you to:
+
+- Write or update a document (use \`create_doc\` or \`update_doc\`)
+- Research and summarise findings as a comment
+- Make architectural or planning decisions and record them
+- Any other non-code task described in the issue
+
+Use your judgment to complete the work thoroughly. If the issue is ambiguous, do your best and note any assumptions in the closing comment.
+
+## Step 4 — Update the PRD (if applicable)
+
+If a PRD was loaded in Step 2 and the work you did is relevant to it, call \`update_doc\` to append a summary section at the end of the existing PRD content:
+
+\`\`\`
+## Update: <short title>
+
+<What was done or decided, in bullet points>
+\`\`\`
+
+Do not rewrite the PRD body — only append.
+
+## Step 5 — Comment on the issue
+
+Call \`add_comment\` on the issue (\`target_type: "issue"\`) with a brief summary of what was done. Include:
+
+- What was completed (bullet list)
+- Any assumptions made or open questions remaining
+
+## Step 6 — Move to Needs Human Review
+
+Call \`move_issue\` with \`column: "NEEDS_HUMAN_REVIEW"\`.
+
+A human will review the output and either approve or send it back with feedback.
+
+---
+
+## Reference: MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| \`get_issue\` | Read the issue description |
+| \`move_issue\` | Move the issue to a new column |
+| \`add_comment\` | Post a comment to the issue |
+| \`list_docs\` | List documents linked to the issue |
+| \`get_doc\` | Read a document (e.g. the PRD) |
+| \`create_doc\` | Create a new document |
+| \`update_doc\` | Append a new version to an existing document |
+
+## Reference: Valid column names for move_issue
+
+\`TODO\` → \`IN_PROGRESS\` → \`NEEDS_HUMAN_REVIEW\`
 `,
   },
   {
