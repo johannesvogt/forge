@@ -74,6 +74,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     async ({ id, column }) => {
       const issue = await resolveIssue(db, projectId, id);
       if (!issue) throw new Error(`Issue not found: ${id}`);
+      if (issue.column === 'BACKLOG') throw new Error('Agents cannot move issues out of BACKLOG. A human must promote the issue to TODO first.');
       const moved = await moveIssue(db, projectId, issue.id, column as Column);
       return { content: [{ type: 'text' as const, text: JSON.stringify(moved) }] };
     }
@@ -300,6 +301,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     async ({ id }) => {
       const issue = await resolveIssue(db, projectId, id);
       if (!issue) throw new Error(`Issue not found: ${id}`);
+      if (issue.column === 'BACKLOG') throw new Error('Agents cannot claim BACKLOG issues. A human must promote the issue to TODO first.');
       const assigned = await assignIssue(db, projectId, issue.id, agentLabel);
       return { content: [{ type: 'text' as const, text: JSON.stringify(assigned) }] };
     }

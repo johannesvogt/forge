@@ -210,6 +210,79 @@ If everything is correct and there are no issues:
 `,
   },
   {
+    name: 'review-general-issue',
+    description: 'Review a non-implementation issue in NEEDS_AGENT_REVIEW: verify the work matches acceptance criteria, flag blockers or create follow-up backlog items for minor issues.',
+    prompt: `# review-general-issue
+
+You are performing an agent review on a general issue (not an implementation or refactoring issue) that is in the NEEDS_AGENT_REVIEW column.
+
+## Steps
+
+### 1. Claim the issue
+
+- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock.
+- Call \`move_issue(id, "IN_PROGRESS")\`
+- Call \`add_comment\` on the issue: "Picked up for agent review."
+
+### 2. Load context
+
+- Call \`get_project_info\` to get the project slug (needed for constructing links).
+- Call \`get_issue(id)\` to read the full description and acceptance criteria.
+- Call \`list_docs\` and \`get_doc\` for any referenced documents or PRDs.
+- Call \`list_comments\` on the issue to understand what work was done.
+
+### 3. Review
+
+Check the following:
+
+**3a. Acceptance criteria**
+Verify that each acceptance criterion in the issue description has been met. Look at comments, linked documents, and any other artifacts produced by the agent that worked the issue.
+
+**3b. Quality of deliverables**
+Assess whether the work product (document, plan, research output, architectural decision, etc.) is complete, accurate, and fit for purpose. Flag anything that is missing, incorrect, or contradicts existing project context.
+
+**3c. Side-effects**
+Check whether the work introduced any unintended consequences — e.g. a document that conflicts with \`CONTEXT.md\`, a plan that contradicts an ADR, or a decision that should have been recorded as an ADR but wasn't.
+
+### 4. Verdict
+
+#### Blocking issues found
+
+If any acceptance criterion is unmet, the work is materially incomplete or incorrect, or a significant conflict exists:
+
+1. Call \`unassign_issue(id)\`
+2. Call \`add_comment\` on the issue with a detailed description of every problem found. The comment **must** start with:
+   \`\`\`
+   ISSUE DID NOT PASS REVIEW, PLEASE READ COMMENTS AND IMPLEMENT REQUESTED CHANGES
+   \`\`\`
+   Follow with a numbered list of specific, actionable problems.
+3. Call \`move_issue(id, "TODO")\`
+
+#### Minor non-blocking issues only
+
+If the work passes but there are minor gaps, improvements, or follow-up tasks worth tracking:
+
+1. Call \`create_issue\` with column \`BACKLOG\` for each cluster of related minor issues. Prefix the description with:
+   \`\`\`
+   follow-up
+
+   Follow-up from [#<original-id>: <original-title>](/projects/<slug>/board/<original-id>)
+   \`\`\`
+   Then describe the specific follow-up work needed.
+2. Call \`add_comment\` on the original issue:
+   "Minor issues found. Follow-up issue(s) created: [#<new-id>](/projects/<slug>/board/<new-id>) [, ...]. The issue passes review."
+3. Call \`unassign_issue(id)\`
+4. Call \`move_issue(id, "DONE")\`
+
+#### Clean pass
+
+If everything is complete and correct:
+1. Call \`add_comment\` on the issue: "Agent review passed. Acceptance criteria met."
+2. Call \`unassign_issue(id)\`
+3. Call \`move_issue(id, "DONE")\`
+`,
+  },
+  {
     name: 'grill-with-docs',
     description: 'Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates the project context and ADR documents inline as decisions crystallise.',
     prompt: `# grill-with-docs
@@ -376,10 +449,9 @@ An issue whose description starts with \`implementation-issue\` must be processe
 
 ## Step 1 — Claim the issue
 
-1. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
+1. Call \`assign_issue\` — this fails if another agent holds a non-stale lock (less than 4 hours old). If it fails, stop and output \`<promise>NO_ISSUES</promise>\`.
 2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
-
-There is no assignee field — claiming via comment is the canonical pattern.
+3. Call \`add_comment\` on the issue with body: "Picking up this issue."
 
 ## Step 2 — Read the PRD
 
@@ -447,7 +519,8 @@ Commit: abc1234def5678
 
 ## Step 8 — Move to Needs Agent Review
 
-Call \`move_issue\` with \`column: "NEEDS_AGENT_REVIEW"\`.
+1. Call \`unassign_issue\` to release the lock.
+2. Call \`move_issue\` with \`column: "NEEDS_AGENT_REVIEW"\`.
 
 A separate agent will review the work with fresh context.
 
@@ -457,6 +530,8 @@ A separate agent will review the work with fresh context.
 
 | Tool | Purpose |
 |------|---------|
+| \`assign_issue\` | Claim the issue for this agent (enforces lock) |
+| \`unassign_issue\` | Release the lock when done |
 | \`get_issue\` | Read the issue description and acceptance criteria |
 | \`move_issue\` | Move the issue to a new column |
 | \`add_comment\` | Post a comment to the issue |

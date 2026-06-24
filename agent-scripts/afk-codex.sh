@@ -8,7 +8,7 @@ fi
 
 for ((i=1; i<=$1; i++)); do
   echo "Starting iteration $i"
-  result=$(docker sandbox run claude -- --permission-mode bypassPermissions -p " \
+  result=$(sbx run codex -- --approval-mode full-auto -p " \
   Call list_skills to load available skills, then find and work exactly ONE issue using the routing rules below. \
   \
   ROUTING RULES (apply in order): \
