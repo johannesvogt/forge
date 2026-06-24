@@ -81,21 +81,23 @@ You are breaking down a plan, spec, or PRD into independently-grabbable issues o
 - Each issue is a vertical slice: from data model → service → API → UI (where applicable).
 - Issues should be executable by a single agent in one session.
 - Order by dependency: later issues may reference earlier ones, but never the reverse.
-- Each issue description includes: What to build, Acceptance criteria, Blocked by (if any).
+- Each issue description includes: What to build, Acceptance criteria.
 
 ## Steps
 
 1. Read the PRD or spec from the current context (or fetch it via \`get_doc\`).
-2. Identify the vertical slices — each one becomes one issue.
-3. Call \`create_issue\` for each slice in dependency order.
-4. Call \`add_comment\` on the parent issue (or PRD document) listing the created issue IDs.
+2. Call \`get_project_info\` to get the project slug.
+3. Identify the vertical slices — each one becomes one issue.
+4. Call \`create_issue\` for each slice in dependency order.
+5. Call \`add_dependency\` for each blocking relationship identified between the created issues.
+6. Call \`add_comment\` on the parent issue (or PRD document) listing the created issues as markdown links: \`[#<id>: <title>](/projects/<slug>/board/<id>)\`.
 
 ## Issue types and annotation
 
-When creating an issue whose primary work is writing code (feature implementation, bug fix, refactor), prefix the description with \`implementation-issue\` on its own line. If the issue is created in the context of a PRD, include the PRD name on the same line:
+When creating an issue whose primary work is writing code (feature implementation, bug fix, refactor), prefix the description with \`implementation-issue\` on its own line. If the issue is created in the context of a PRD, include a markdown link to the PRD document on the same line:
 
 \`\`\`
-implementation-issue, PRD: <prd-name>
+implementation-issue, [PRD: <prd-title>](/projects/<slug>/documents/<doc-id>)
 
 <rest of description>
 \`\`\`
@@ -108,7 +110,7 @@ implementation-issue
 <rest of description>
 \`\`\`
 
-This annotation tells the agent picking up the issue to invoke the \`process-implementation-issue\` skill.
+This annotation tells the agent picking up the issue to invoke the \`process-implementation-issue\` skill. The markdown link lets human reviewers navigate directly to the PRD from the issue.
 
 Issues that are not implementation work (e.g. planning, writing a PRD, architecture review) must not carry this annotation.
 
@@ -116,6 +118,95 @@ Issues that are not implementation work (e.g. planning, writing a PRD, architect
 
 - One Forge issue per slice, created via \`create_issue\`
 - Comment on the source document or issue with the full issue list
+`,
+  },
+  {
+    name: 'review-implementation-issue',
+    description: 'Review an implementation issue in NEEDS_AGENT_REVIEW: verify code, tests, type checks, and feature behaviour. Pass, flag minor issues as follow-up refactoring, or return to TODO with blocking feedback.',
+    prompt: `# review-implementation-issue
+
+You are performing an agent code review on an implementation issue that is in the NEEDS_AGENT_REVIEW column.
+
+## Steps
+
+### 1. Claim the issue
+
+- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock.
+- Call \`move_issue(id, "IN_PROGRESS")\`
+- Call \`add_comment\` on the issue: "Picked up for agent review."
+
+### 2. Load context
+
+- Call \`get_project_info\` to get the project slug (needed for constructing links).
+- Call \`get_issue(id)\` to read the full description, acceptance criteria, and dependency list.
+- If the description references a PRD (e.g. "PRD: <name>"), call \`list_docs\` and \`get_doc\` to load it.
+- Call \`list_comments\` on the issue and find the comment that contains the git diff or a reference to a diff artifact. If a diff ID is referenced, call \`get_diff\` to load it.
+
+### 3. Review
+
+Work through each of the following in order:
+
+**3a. Code review**
+Read the diff. Check that:
+- The implementation matches the acceptance criteria in the issue (and PRD if present).
+- No obvious bugs, security issues, or correctness problems.
+- No unintended side-effects on other features.
+
+**3b. Tests**
+Run the project test suite. All tests must pass.
+
+**3c. Type checks**
+Run \`tsc --noEmit\` (or the project's type check command). Zero errors required.
+
+If you encounter failures that are clearly pre-existing (present in the repo before this commit, unrelated to the changed code), do **not** block the review on them — but you **must** create a BACKLOG issue for each pre-existing problem you find. Use the same \`refactoring-issue\` prefix format. Do not silently note them in a comment and move on.
+
+**3d. Feature verification**
+Test the feature itself as far as possible given the environment (start the dev server if needed, exercise the golden path and key edge cases from the acceptance criteria).
+
+### 4. Verdict
+
+#### Blocking issues found
+
+If any of the following are true:
+- Acceptance criteria not met
+- Tests failing due to this commit
+- Type errors introduced by this commit
+- Correctness bug
+- Security issue
+
+Pre-existing failures (provably present before this commit) are **not** blocking — but each one requires a BACKLOG issue (see step 3c above).
+
+Then:
+1. Call \`unassign_issue(id)\`
+2. Call \`add_comment\` on the issue with a detailed description of every problem found. The comment **must** start with:
+   \`\`\`
+   ISSUE DID NOT PASS REVIEW, PLEASE READ COMMENTS AND IMPLEMENT REQUESTED CHANGES
+   \`\`\`
+   Follow with a numbered list of specific, actionable problems.
+3. Call \`move_issue(id, "TODO")\`
+
+#### Minor non-functional issues only
+
+If the implementation is correct and all checks pass, but there are non-functional concerns (naming, code style, minor structural improvements, test coverage gaps that don't affect correctness):
+
+1. Call \`create_issue\` with column \`BACKLOG\` for each cluster of related minor issues. Prefix the description with:
+   \`\`\`
+   refactoring-issue
+
+   Follow-up from [#<original-id>: <original-title>](/projects/<slug>/board/<original-id>)
+   \`\`\`
+   Then describe the specific changes needed.
+2. Call \`add_comment\` on the original issue:
+   "Minor non-functional issues found. Follow-up refactoring issue(s) created: [#<new-id>](/projects/<slug>/board/<new-id>) [, ...]. The implementation passes review."
+3. Call \`unassign_issue(id)\`
+4. Call \`move_issue(id, "DONE")\`
+
+#### Clean pass
+
+If everything is correct and there are no issues:
+1. Call \`add_comment\` on the issue: "Agent review passed. All tests green, type check clean, acceptance criteria met."
+2. Call \`unassign_issue(id)\`
+3. Call \`move_issue(id, "DONE")\`
 `,
   },
   {

@@ -43,9 +43,8 @@ export default function SkillsPage() {
     setLoadingSeeds(true);
     try {
       const res = await fetch(`/api/skills/seed-new?projectId=${projectId}`, { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to load new seeds');
-      const { count } = await res.json();
-      if (count > 0) await fetchSkills();
+      if (!res.ok) throw new Error('Failed to reload seeds');
+      await fetchSkills();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -93,7 +92,7 @@ export default function SkillsPage() {
             disabled={loadingSeeds}
             className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {loadingSeeds ? 'Loading…' : 'Load New Seeds'}
+            {loadingSeeds ? 'Reloading…' : 'Reload Seeds'}
           </button>
           <button
             onClick={() => setShowCreate(true)}

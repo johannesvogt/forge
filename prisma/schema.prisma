@@ -20,6 +20,7 @@ model Project {
   id              String         @id @default(cuid())
   name            String
   slug            String         @unique
+  issueCounter    Int            @default(0)
   createdByUserId String
   createdBy       User           @relation(fields: [createdByUserId], references: [id])
   createdAt       DateTime       @default(now())
@@ -46,14 +47,28 @@ model ApiKey {
 }
 
 model Issue {
-  id          String   @id @default(cuid())
-  title       String
-  description String   @default("")
-  column      String   @default("BACKLOG")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id              String            @id @default(cuid())
+  key             String            @unique
+  title           String
+  description     String            @default("")
+  column          String            @default("BACKLOG")
+  agentAssignee   String?
+  agentAssignTs   DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  projectId       String
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencies    IssueDependency[] @relation("IssueDependencies")
+  blockers        IssueDependency[] @relation("IssueBlockers")
+}
+
+model IssueDependency {
+  dependentId String
+  dependsOnId String
+  dependent   Issue  @relation("IssueDependencies", fields: [dependentId], references: [id], onDelete: Cascade)
+  dependsOn   Issue  @relation("IssueBlockers", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@id([dependentId, dependsOnId])
 }
 
 model Comment {

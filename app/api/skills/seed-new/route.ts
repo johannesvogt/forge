@@ -12,20 +12,36 @@ export async function POST(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
 
   const existing = await listSkills(prisma as any, projectId);
-  const existingNames = new Set(existing.map((s) => s.name));
+  const existingByName = new Map(existing.map((s) => [s.name, s]));
 
-  const toCreate = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name));
+  let created = 0;
+  let updated = 0;
 
-  const created = [];
-  for (const seed of toCreate) {
-    const skill = await (prisma as any).skill.create({
-      data: { name: seed.name, description: seed.description, prompt: seed.prompt, projectId },
-    });
-    for (const file of seed.files ?? []) {
-      await (prisma as any).skillFile.create({ data: { skillId: skill.id, name: file.name, content: file.content } });
+  for (const seed of DEFAULT_SKILLS) {
+    const existingSkill = existingByName.get(seed.name);
+    if (existingSkill) {
+      await (prisma as any).skill.update({
+        where: { id: existingSkill.id },
+        data: { description: seed.description, prompt: seed.prompt, updatedAt: new Date() },
+      });
+      const existingFiles = await (prisma as any).skillFile.findMany({ where: { skillId: existingSkill.id } });
+      for (const file of existingFiles) {
+        await (prisma as any).skillFile.delete({ where: { id: file.id } });
+      }
+      for (const file of seed.files ?? []) {
+        await (prisma as any).skillFile.create({ data: { skillId: existingSkill.id, name: file.name, content: file.content } });
+      }
+      updated++;
+    } else {
+      const skill = await (prisma as any).skill.create({
+        data: { name: seed.name, description: seed.description, prompt: seed.prompt, projectId },
+      });
+      for (const file of seed.files ?? []) {
+        await (prisma as any).skillFile.create({ data: { skillId: skill.id, name: file.name, content: file.content } });
+      }
+      created++;
     }
-    created.push(skill);
   }
 
-  return NextResponse.json({ created, count: created.length });
+  return NextResponse.json({ created, updated });
 }

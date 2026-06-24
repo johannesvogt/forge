@@ -40,13 +40,20 @@ Create `.mcp.json` at the root of the project where the agent will work:
   "mcpServers": {
     "forge": {
       "type": "http",
-      "url": "http://localhost:3000/api/mcp",
+      "url": "http://${FORGE_HOST:-host.docker.internal}:3000/api/mcp",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }
     }
   }
 }
+```
+
+The URL defaults to `host.docker.internal` so it works inside a Claude sandbox. For non-sandbox sessions (Claude running directly on your machine), set `FORGE_HOST=localhost` in your shell profile:
+
+```bash
+# ~/.zshrc
+export FORGE_HOST=localhost
 ```
 
 ### 3. Add Claude Code settings

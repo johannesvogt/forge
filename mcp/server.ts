@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createIssue, listIssues, getIssue, updateIssue, moveIssue } from '../lib/issues/issue-service.ts';
+import { createIssue, listIssues, getIssue, updateIssue, moveIssue, addDependency, removeDependency, listDependencies, resolveIssue, assignIssue, unassignIssue } from '../lib/issues/issue-service.ts';
 import { addComment, listComments } from '../lib/comments/comment-service.ts';
 import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
 import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
@@ -24,18 +24,19 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
 
   server.tool(
     'get_issue',
-    'Get a single issue by ID',
-    { id: z.string() },
+    'Get a single issue by key (e.g. FORG-1) or id, including its dependsOn list',
+    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
     async ({ id }) => {
-      const issue = await getIssue(db, projectId, id);
+      const issue = await resolveIssue(db, projectId, id);
       if (!issue) throw new Error(`Issue not found: ${id}`);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+      const dependsOn = await listDependencies(db, projectId, issue.id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ ...issue, dependsOn }) }] };
     }
   );
 
   server.tool(
     'create_issue',
-    'Create a new issue',
+    'Create a new issue. Returns the issue including its assigned key (e.g. FORG-1).',
     {
       title: z.string(),
       description: z.string().optional(),
@@ -49,28 +50,32 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
 
   server.tool(
     'update_issue',
-    'Update an issue title or description',
+    'Update an issue title or description. Accepts key (e.g. FORG-1) or internal id.',
     {
-      id: z.string(),
+      id: z.string().describe('Issue key (e.g. FORG-1) or internal id'),
       title: z.string().optional(),
       description: z.string().optional(),
     },
     async ({ id, title, description }) => {
-      const issue = await updateIssue(db, projectId, id, { title, description });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+      const issue = await resolveIssue(db, projectId, id);
+      if (!issue) throw new Error(`Issue not found: ${id}`);
+      const updated = await updateIssue(db, projectId, issue.id, { title, description });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(updated) }] };
     }
   );
 
   server.tool(
     'move_issue',
-    'Move an issue to a new column, enforcing the state machine',
+    'Move an issue to a new column, enforcing the state machine. Accepts key (e.g. FORG-1) or internal id.',
     {
-      id: z.string(),
+      id: z.string().describe('Issue key (e.g. FORG-1) or internal id'),
       column: z.string(),
     },
     async ({ id, column }) => {
-      const issue = await moveIssue(db, projectId, id, column as Column);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+      const issue = await resolveIssue(db, projectId, id);
+      if (!issue) throw new Error(`Issue not found: ${id}`);
+      const moved = await moveIssue(db, projectId, issue.id, column as Column);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(moved) }] };
     }
   );
 
@@ -90,6 +95,12 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         .optional(),
     },
     async ({ target_type, target_id, anchor }) => {
+      let resolvedTargetId = target_id;
+      if (target_type === 'issue') {
+        const issue = await resolveIssue(db, projectId, target_id);
+        if (!issue) throw new Error(`Issue not found: ${target_id}`);
+        resolvedTargetId = issue.id;
+      }
       let parsedAnchor: Parameters<typeof listComments>[3];
       if (anchor) {
         if (anchor.file_path !== undefined && anchor.line_number !== undefined) {
@@ -98,7 +109,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
           parsedAnchor = { startOffset: anchor.start_offset, endOffset: anchor.end_offset };
         }
       }
-      const comments = await listComments(db, target_type, target_id, parsedAnchor);
+      const comments = await listComments(db, target_type, resolvedTargetId, parsedAnchor);
       return { content: [{ type: 'text' as const, text: JSON.stringify(comments) }] };
     }
   );
@@ -120,9 +131,15 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         .optional(),
     },
     async ({ target_type, target_id, body, anchor }) => {
+      let resolvedTargetId = target_id;
+      if (target_type === 'issue') {
+        const issue = await resolveIssue(db, projectId, target_id);
+        if (!issue) throw new Error(`Issue not found: ${target_id}`);
+        resolvedTargetId = issue.id;
+      }
       const input: Parameters<typeof addComment>[1] = {
         targetType: target_type,
-        targetId: target_id,
+        targetId: resolvedTargetId,
         body,
         authorLabel: agentLabel,
         authorUserId: null,
@@ -273,6 +290,68 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       const result = await getSkillWithFiles(db, projectId, name);
       if (!result) throw new Error(`Skill not found: ${name}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'assign_issue',
+    'Claim an issue for this agent. Fails if another agent holds a lock younger than 4 hours. Accepts key (e.g. FORG-1) or internal id.',
+    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
+    async ({ id }) => {
+      const issue = await resolveIssue(db, projectId, id);
+      if (!issue) throw new Error(`Issue not found: ${id}`);
+      const assigned = await assignIssue(db, projectId, issue.id, agentLabel);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(assigned) }] };
+    }
+  );
+
+  server.tool(
+    'unassign_issue',
+    'Release this agent\'s claim on an issue. Call when the task is done or abandoned. Accepts key (e.g. FORG-1) or internal id.',
+    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
+    async ({ id }) => {
+      const issue = await resolveIssue(db, projectId, id);
+      if (!issue) throw new Error(`Issue not found: ${id}`);
+      const unassigned = await unassignIssue(db, projectId, issue.id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(unassigned) }] };
+    }
+  );
+
+  server.tool(
+    'add_dependency',
+    'Add a dependency: dependent cannot move to IN_PROGRESS until depends_on is DONE. Accepts keys (e.g. FORG-1) or internal ids.',
+    { dependent_id: z.string(), depends_on_id: z.string() },
+    async ({ dependent_id, depends_on_id }) => {
+      const dependent = await resolveIssue(db, projectId, dependent_id);
+      if (!dependent) throw new Error(`Issue not found: ${dependent_id}`);
+      const dependsOn = await resolveIssue(db, projectId, depends_on_id);
+      if (!dependsOn) throw new Error(`Issue not found: ${depends_on_id}`);
+      await addDependency(db, projectId, dependent.id, dependsOn.id);
+      return { content: [{ type: 'text' as const, text: 'Dependency added' }] };
+    }
+  );
+
+  server.tool(
+    'remove_dependency',
+    'Remove a dependency between two issues. Accepts keys (e.g. FORG-1) or internal ids.',
+    { dependent_id: z.string(), depends_on_id: z.string() },
+    async ({ dependent_id, depends_on_id }) => {
+      const dependent = await resolveIssue(db, projectId, dependent_id);
+      if (!dependent) throw new Error(`Issue not found: ${dependent_id}`);
+      const dependsOn = await resolveIssue(db, projectId, depends_on_id);
+      if (!dependsOn) throw new Error(`Issue not found: ${depends_on_id}`);
+      await removeDependency(db, projectId, dependent.id, dependsOn.id);
+      return { content: [{ type: 'text' as const, text: 'Dependency removed' }] };
+    }
+  );
+
+  server.tool(
+    'get_project_info',
+    'Get project metadata: id, name, and slug. Use slug to construct links — documents: /projects/<slug>/documents/<docId>, issues: /projects/<slug>/board/<issueId>',
+    {},
+    async () => {
+      const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, slug: true } });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(project) }] };
     }
   );
 

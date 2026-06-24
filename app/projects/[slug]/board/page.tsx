@@ -17,9 +17,11 @@ type ColumnId = (typeof COLUMNS)[number]['id'];
 
 interface Issue {
   id: string;
+  key: string;
   title: string;
   description: string;
   column: string;
+  agentAssignee: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +160,12 @@ export default function BoardPage() {
                   href={`/projects/${slug}/board/${issue.id}`}
                   className="block rounded-md bg-white border border-gray-200 px-3 py-2 text-sm text-gray-800 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all"
                 >
+                  <div className="mb-1 flex items-center justify-between gap-1">
+                    <span className="font-mono text-xs text-gray-400">{issue.key}</span>
+                    {issue.agentAssignee && (
+                      <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title={`Assigned to ${issue.agentAssignee}`} />
+                    )}
+                  </div>
                   <span className="font-medium line-clamp-2">{issue.title}</span>
                 </Link>
               ))}

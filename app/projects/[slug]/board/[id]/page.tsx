@@ -31,9 +31,12 @@ function colLabel(id: string): string {
 
 interface Issue {
   id: string;
+  key: string;
   title: string;
   description: string;
   column: string;
+  agentAssignee: string | null;
+  agentAssignTs: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +48,13 @@ interface Comment {
   authorUserId: string | null;
   status: string;
   createdAt: string;
+}
+
+interface Dependency {
+  id: string;
+  key: string;
+  title: string;
+  column: string;
 }
 
 interface LinkedDocument {
@@ -88,6 +98,12 @@ export default function IssueDetailPage() {
   const [docSubmitting, setDocSubmitting] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
 
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [showDepForm, setShowDepForm] = useState(false);
+  const [depId, setDepId] = useState('');
+  const [depSubmitting, setDepSubmitting] = useState(false);
+  const [depError, setDepError] = useState<string | null>(null);
+
   const [diffs, setDiffs] = useState<LinkedDiff[]>([]);
   const [showDiffForm, setShowDiffForm] = useState(false);
   const [diffTitle, setDiffTitle] = useState('');
@@ -130,6 +146,16 @@ export default function IssueDetailPage() {
     }
   }, [id, projectId]);
 
+  const fetchDeps = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/issues/${id}/dependencies?projectId=${projectId}`);
+      if (!res.ok) return;
+      setDependencies(await res.json());
+    } catch {
+      // non-critical
+    }
+  }, [id, projectId]);
+
   const fetchDiffs = useCallback(async () => {
     try {
       const res = await fetch(`/api/issues/${id}/diffs?projectId=${projectId}`);
@@ -144,8 +170,43 @@ export default function IssueDetailPage() {
     fetchIssue();
     fetchComments();
     fetchDocuments();
+    fetchDeps();
     fetchDiffs();
-  }, [fetchIssue, fetchComments, fetchDocuments, fetchDiffs]);
+  }, [fetchIssue, fetchComments, fetchDocuments, fetchDeps, fetchDiffs]);
+
+  async function handleAddDep(e: React.FormEvent) {
+    e.preventDefault();
+    if (!depId.trim()) return;
+    setDepSubmitting(true);
+    setDepError(null);
+    try {
+      const res = await fetch(`/api/issues/${id}/dependencies?projectId=${projectId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dependsOnId: depId.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Failed to add dependency');
+      }
+      setDepId('');
+      setShowDepForm(false);
+      await fetchDeps();
+    } catch (e) {
+      setDepError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setDepSubmitting(false);
+    }
+  }
+
+  async function handleRemoveDep(depIssueId: string) {
+    try {
+      await fetch(`/api/issues/${id}/dependencies/${depIssueId}?projectId=${projectId}`, { method: 'DELETE' });
+      setDependencies((prev) => prev.filter((d) => d.id !== depIssueId));
+    } catch {
+      // non-critical
+    }
+  }
 
   async function handleMove(target: ColumnId) {
     if (!issue) return;
@@ -246,7 +307,10 @@ export default function IssueDetailPage() {
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h1 className="text-xl font-semibold text-gray-900">{issue.title}</h1>
+          <div>
+            <span className="mb-1 block font-mono text-xs font-medium text-gray-400">{issue.key}</span>
+            <h1 className="text-xl font-semibold text-gray-900">{issue.title}</h1>
+          </div>
           <span
             className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${columnBadge[issue.column] ?? 'bg-gray-100 text-gray-600'}`}
           >
@@ -283,10 +347,86 @@ export default function IssueDetailPage() {
           )}
         </div>
 
-        <div className="mt-4 text-xs text-gray-400">
+        {issue.agentAssignee && (
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-amber-700">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+            Assigned to <span className="font-medium">{issue.agentAssignee}</span>
+            {issue.agentAssignTs && (
+              <span className="text-gray-400">· since {new Date(issue.agentAssignTs).toLocaleString()}</span>
+            )}
+          </div>
+        )}
+        <div className="mt-2 text-xs text-gray-400">
           Created {new Date(issue.createdAt).toLocaleString()} ·{' '}
           Updated {new Date(issue.updatedAt).toLocaleString()}
         </div>
+      </div>
+
+      {/* Dependencies section */}
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Depends On {dependencies.length > 0 && <span className="text-gray-400">({dependencies.length})</span>}
+          </h2>
+          <button
+            onClick={() => setShowDepForm((v) => !v)}
+            className="text-xs text-indigo-600 hover:underline"
+          >
+            {showDepForm ? 'Cancel' : '+ Add Dependency'}
+          </button>
+        </div>
+
+        {dependencies.length === 0 && !showDepForm && (
+          <p className="text-sm text-gray-400 italic">No dependencies.</p>
+        )}
+
+        {dependencies.length > 0 && (
+          <div className="space-y-2">
+            {dependencies.map((dep) => (
+              <div key={dep.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+                <Link
+                  href={`/projects/${slug}/board/${dep.id}`}
+                  className="text-sm text-gray-800 hover:text-indigo-600 hover:underline truncate"
+                >
+                  <span className="mr-1.5 font-mono text-xs text-gray-400">{dep.key}</span>{dep.title}
+                </Link>
+                <div className="ml-3 flex flex-shrink-0 items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${dep.column === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {dep.column === 'DONE' ? 'Done' : dep.column.replace(/_/g, ' ')}
+                  </span>
+                  <button
+                    onClick={() => handleRemoveDep(dep.id)}
+                    className="text-xs text-red-400 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showDepForm && (
+          <form onSubmit={handleAddDep} className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={depId}
+              onChange={(e) => setDepId(e.target.value)}
+              placeholder="Issue key (e.g. FORG-1)…"
+              required
+              autoFocus
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <button
+              type="submit"
+              disabled={depSubmitting || !depId.trim()}
+              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {depSubmitting ? 'Adding…' : 'Add'}
+            </button>
+          </form>
+        )}
+        {depError && <p className="mt-1 text-xs text-red-600">{depError}</p>}
       </div>
 
       {/* Documents section */}
