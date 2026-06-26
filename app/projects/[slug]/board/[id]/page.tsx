@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useProject } from '../../project-context';
+import { Markdown } from '../../../../../components/Markdown';
 
 const COLUMNS = [
   { id: 'BACKLOG', label: 'Backlog' },
@@ -319,7 +320,7 @@ export default function IssueDetailPage() {
         </div>
 
         {issue.description ? (
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{issue.description}</p>
+          <Markdown className="text-sm text-gray-700">{issue.description}</Markdown>
         ) : (
           <p className="text-sm text-gray-400 italic">No description.</p>
         )}
@@ -639,7 +640,7 @@ export default function IssueDetailPage() {
                     {new Date(comment.createdAt).toLocaleString()}
                   </span>
                 </div>
-                <p className="text-sm text-gray-800 whitespace-pre-wrap">{comment.body}</p>
+                <Markdown className="text-sm text-gray-800">{comment.body}</Markdown>
               </div>
             ))}
           </div>

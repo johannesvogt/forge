@@ -78,13 +78,31 @@ Create `.claude/settings.json` at the root of the project where the agent will w
 
 `permissions.allow` removes approval prompts for all Forge MCP tools. The `SessionStart` hook injects a reminder that tells Claude to call `list_skills` at the start of every session, so skill definitions are always loaded before work begins.
 
-### 4. Restart Claude Code
+### 4. Authenticate the Docker sandbox and allow host access
+
+Run this once from the project directory to log in and get an interactive shell inside the sandbox:
+
+```bash
+docker sandbox run claude
+```
+
+The sandbox name is printed on first startup (e.g. `claude-timeline`). Once you have it, open a second terminal and allow the sandbox to reach Forge on localhost:
+
+```bash
+docker sandbox network proxy <sandbox-name> --allow-host localhost
+```
+
+Then verify the MCP connection from inside the sandbox:
+
+```bash
+claude mcp list
+```
+
+`forge` should appear with its tools listed.
+
+### 5. Restart Claude Code
 
 MCP servers load at startup. Restart the session after editing settings.
-
-### 5. Verify
-
-Run `/mcp` in the Claude Code prompt — `forge` should appear in the list with its available tools.
 
 ---
 

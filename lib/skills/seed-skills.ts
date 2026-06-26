@@ -287,15 +287,19 @@ If everything is complete and correct:
     description: 'Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates the project context and ADR documents inline as decisions crystallise.',
     prompt: `# grill-with-docs
 
+## Step 1 — Bootstrap domain context (do this before asking anything)
+
+1. Call \`get_project_context\`. Note whether it is empty or populated.
+2. Call \`list_docs\` and read any ADR documents found.
+3. Briefly tell the user what you loaded: existing terms, past decisions, or "no context yet — we will build it together."
+
+## Step 2 — Interview
+
 Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
 
 Ask the questions one at a time, waiting for feedback on each question before continuing.
 
-If a question can be answered by loading existing context or documents, do that instead of asking.
-
-## Domain awareness
-
-Start by calling \`get_project_context\`. If it returns empty, the context does not exist yet — you will create it when the first term is resolved. Also call \`list_docs\` to load any relevant existing documents.
+If a question can be answered by the loaded context or documents, use that instead of asking.
 
 ## During the session
 
@@ -313,7 +317,7 @@ When domain relationships are being discussed, stress-test them with specific sc
 
 ### Update project context inline
 
-When a term is resolved, call \`update_project_context\` right there — don't batch these up. Use the format in CONTEXT-FORMAT.md.
+When a term is resolved, call \`update_project_context\` right there — don't batch these up. This applies even on a new project with no prior context: the first resolved term creates the context. Use the format in CONTEXT-FORMAT.md.
 
 The project context should be totally devoid of implementation details. Do not treat it as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
 
