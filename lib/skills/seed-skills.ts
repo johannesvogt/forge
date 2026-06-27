@@ -163,6 +163,12 @@ If you encounter failures that are clearly pre-existing (present in the repo bef
 **3d. Feature verification**
 Test the feature itself as far as possible given the environment (start the dev server if needed, exercise the golden path and key edge cases from the acceptance criteria).
 
+If the diff touches any web UI code (React components, pages, styles, client-side logic), verify the change using Playwright:
+- Start the dev server if not already running.
+- Write and run a Playwright script that navigates to the affected UI, exercises the golden path, and asserts the acceptance criteria are visually met.
+- Also check for obvious regressions in adjacent UI areas touched by the diff.
+- A Playwright failure is a blocking issue (treat it the same as a failing test).
+
 ### 4. Verdict
 
 #### Blocking issues found

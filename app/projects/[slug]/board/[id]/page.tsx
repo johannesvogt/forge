@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useProject } from '../../project-context';
 import { Markdown } from '../../../../../components/Markdown';
+import { COLUMNS as STATE_COLUMNS, canTransition, type Column } from '@/lib/issues/state-machine';
 
 const COLUMNS = [
   { id: 'BACKLOG', label: 'Backlog' },
@@ -17,17 +18,12 @@ const COLUMNS = [
 
 type ColumnId = (typeof COLUMNS)[number]['id'];
 
-const VALID_TRANSITIONS: Record<ColumnId, ColumnId[]> = {
-  BACKLOG: ['TODO'],
-  TODO: ['IN_PROGRESS'],
-  IN_PROGRESS: ['NEEDS_HUMAN_REVIEW', 'NEEDS_AGENT_REVIEW', 'DONE'],
-  NEEDS_HUMAN_REVIEW: ['DONE', 'IN_PROGRESS'],
-  NEEDS_AGENT_REVIEW: ['DONE', 'IN_PROGRESS'],
-  DONE: [],
-};
-
 function colLabel(id: string): string {
   return COLUMNS.find((c) => c.id === id)?.label ?? id;
+}
+
+function validTransitions(from: string): ColumnId[] {
+  return STATE_COLUMNS.filter((col) => canTransition(from as Column, col)) as ColumnId[];
 }
 
 interface Issue {
@@ -85,6 +81,7 @@ export default function IssueDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [unassigning, setUnassigning] = useState(false);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentBody, setCommentBody] = useState('');
@@ -231,6 +228,23 @@ export default function IssueDetailPage() {
     }
   }
 
+  async function handleUnassign() {
+    if (!issue) return;
+    setUnassigning(true);
+    try {
+      const res = await fetch(`/api/issues/${id}/unassign?projectId=${projectId}`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Unassign failed');
+      }
+      setIssue(await res.json());
+    } catch (e) {
+      setMoveError(e instanceof Error ? e.message : 'Unassign failed');
+    } finally {
+      setUnassigning(false);
+    }
+  }
+
   async function handleAddDocument(e: React.FormEvent) {
     e.preventDefault();
     if (!docTitle.trim()) return;
@@ -287,7 +301,7 @@ export default function IssueDetailPage() {
   if (error) return <p className="text-red-600">Error: {error}</p>;
   if (!issue) return null;
 
-  const nextColumns = VALID_TRANSITIONS[issue.column as ColumnId] ?? [];
+  const nextColumns = validTransitions(issue.column);
 
   const columnBadge: Record<string, string> = {
     NEEDS_HUMAN_REVIEW: 'bg-amber-100 text-amber-700',
@@ -349,12 +363,21 @@ export default function IssueDetailPage() {
         </div>
 
         {issue.agentAssignee && (
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-amber-700">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-            Assigned to <span className="font-medium">{issue.agentAssignee}</span>
-            {issue.agentAssignTs && (
-              <span className="text-gray-400">· since {new Date(issue.agentAssignTs).toLocaleString()}</span>
-            )}
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-amber-700">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+              Assigned to <span className="font-medium">{issue.agentAssignee}</span>
+              {issue.agentAssignTs && (
+                <span className="text-gray-400">· since {new Date(issue.agentAssignTs).toLocaleString()}</span>
+              )}
+            </div>
+            <button
+              onClick={handleUnassign}
+              disabled={unassigning}
+              className="text-xs text-red-500 hover:text-red-700 hover:underline disabled:opacity-50"
+            >
+              {unassigning ? 'Unassigning…' : 'Unassign'}
+            </button>
           </div>
         )}
         <div className="mt-2 text-xs text-gray-400">

@@ -86,7 +86,7 @@ Run this once from the project directory to log in and get an interactive shell 
 docker sandbox run claude
 ```
 
-The sandbox name is printed on first startup (e.g. `claude-timeline`). Once you have it, open a second terminal and allow the sandbox to reach Forge on localhost:
+The sandbox name is printed on first startup. Once you have it, open a second terminal and allow the sandbox to reach Forge on localhost:
 
 ```bash
 docker sandbox network proxy <sandbox-name> --allow-host localhost
@@ -103,6 +103,40 @@ claude mcp list
 ### 5. Restart Claude Code
 
 MCP servers load at startup. Restart the session after editing settings.
+
+---
+
+## Configure Codex
+
+Codex connects to Forge the same way — via HTTP MCP with a project-scoped API key.
+
+### 1. Create an API key in Forge
+
+Same as Claude Code setup above (Settings → API Keys).
+
+### 2. Set the API key as an env var
+
+```bash
+# ~/.zshrc
+export FORGE_MCP_TOKEN=<your-api-key>
+```
+
+### 3. Add MCP server to Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.forge]
+url = "http://host.docker.internal:3000/api/mcp"
+bearer_token_env_var = "FORGE_MCP_TOKEN"
+enabled = true
+```
+
+`host.docker.internal` lets the Codex sandbox reach Forge running on your machine. If running Codex outside a sandbox, use `localhost` instead.
+
+### 4. Restart Codex
+
+MCP servers load at startup. Restart the session after editing the config.
 
 ---
 

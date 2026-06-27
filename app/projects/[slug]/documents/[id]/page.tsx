@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useProject } from '../../project-context';
+import { Markdown } from '@/components/Markdown';
 
 interface Document {
   id: string;
@@ -62,8 +63,11 @@ export default function DocumentViewerPage() {
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [newCommentBody, setNewCommentBody] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [activeAnchor, setActiveAnchor] = useState<{ start: number; end: number } | null>(null);
+  const [viewMode, setViewMode] = useState<'markdown' | 'raw'>('markdown');
   const contentRef = useRef<HTMLPreElement>(null);
+  const markdownContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`/api/documents/${id}/versions?projectId=${projectId}`)
@@ -145,11 +149,33 @@ export default function DocumentViewerPage() {
     });
   }, []);
 
+  const handleMarkdownSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !markdownContentRef.current) {
+      setSelection(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const selectedText = range.toString();
+    if (!selectedText) { setSelection(null); return; }
+
+    const rawIdx = doc?.content.indexOf(selectedText) ?? -1;
+    const rect = range.getBoundingClientRect();
+    const containerRect = markdownContentRef.current.getBoundingClientRect();
+    setSelection({
+      start: rawIdx,
+      end: rawIdx >= 0 ? rawIdx + selectedText.length : -1,
+      x: rect.left - containerRect.left,
+      y: rect.bottom - containerRect.top + 4,
+    });
+  }, [doc]);
+
   async function submitInlineComment() {
     if (!selection || !doc || !newCommentBody.trim()) return;
     const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
     if (!currentVersion) return;
     setSubmittingComment(true);
+    setCommentError(null);
     try {
       const res = await fetch(`/api/documents/${id}/comments`, {
         method: 'POST',
@@ -157,8 +183,8 @@ export default function DocumentViewerPage() {
         body: JSON.stringify({
           versionId: currentVersion.id,
           body: newCommentBody.trim(),
-          anchorStart: selection.start,
-          anchorEnd: selection.end,
+          anchorStart: selection.start >= 0 ? selection.start : null,
+          anchorEnd: selection.end >= 0 ? selection.end : null,
         }),
       });
       if (res.ok) {
@@ -167,7 +193,12 @@ export default function DocumentViewerPage() {
         setSelection(null);
         setNewCommentBody('');
         window.getSelection()?.removeAllRanges();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCommentError(data.error ?? 'Failed to save comment');
       }
+    } catch {
+      setCommentError('Failed to save comment');
     } finally {
       setSubmittingComment(false);
     }
@@ -221,6 +252,7 @@ export default function DocumentViewerPage() {
           return (
             <mark
               key={i}
+              onMouseUp={(e) => e.stopPropagation()}
               onClick={() =>
                 setActiveAnchor((prev) =>
                   prev?.start === firstComment.anchorStart && prev?.end === firstComment.anchorEnd
@@ -324,33 +356,61 @@ export default function DocumentViewerPage() {
             )}
 
             <div className="min-w-0 flex-1">
-              <p className="mb-2 text-xs text-gray-400">Select text to add an inline comment.</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs text-gray-400">Select text to add a comment.</p>
+                <div className="flex overflow-hidden rounded border border-gray-200 text-xs">
+                  <button
+                    onClick={() => { setSelection(null); setActiveAnchor(null); setViewMode('markdown'); }}
+                    className={`px-3 py-1 ${viewMode === 'markdown' ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    Formatted
+                  </button>
+                  <button
+                    onClick={() => { setSelection(null); setActiveAnchor(null); setViewMode('raw'); }}
+                    className={`border-l border-gray-200 px-3 py-1 ${viewMode === 'raw' ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    Raw
+                  </button>
+                </div>
+              </div>
+
               <div className="relative border-t border-gray-100 pt-4">
-                <pre
-                  ref={contentRef}
-                  onMouseUp={handleTextSelection}
-                  className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800 select-text"
-                >
-                  {renderAnnotatedContent(doc.content)}
-                </pre>
+                {viewMode === 'raw' ? (
+                  <pre
+                    ref={contentRef}
+                    onMouseUp={handleTextSelection}
+                    className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800 select-text"
+                  >
+                    {renderAnnotatedContent(doc.content)}
+                  </pre>
+                ) : (
+                  <div
+                    ref={markdownContentRef}
+                    onMouseUp={handleMarkdownSelection}
+                    className="prose prose-sm max-w-none select-text text-gray-800"
+                  >
+                    <Markdown>{doc.content}</Markdown>
+                  </div>
+                )}
 
                 {selection && (
                   <div
                     className="absolute z-10 w-72 rounded-lg border border-gray-200 bg-white p-3 shadow-lg"
                     style={{ left: Math.min(selection.x, 400), top: selection.y }}
                   >
-                    <p className="mb-2 text-xs font-medium text-gray-600">Add inline comment</p>
+                    <p className="mb-2 text-xs font-medium text-gray-600">Add comment</p>
                     <textarea
                       autoFocus
                       value={newCommentBody}
                       onChange={(e) => setNewCommentBody(e.target.value)}
                       rows={3}
                       placeholder="Your comment…"
-                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                      className="w-full resize-none rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
                     />
+                    {commentError && <p className="mt-1 text-xs text-red-600">{commentError}</p>}
                     <div className="mt-2 flex justify-end gap-2">
                       <button
-                        onClick={() => { setSelection(null); setNewCommentBody(''); window.getSelection()?.removeAllRanges(); }}
+                        onClick={() => { setSelection(null); setNewCommentBody(''); setCommentError(null); window.getSelection()?.removeAllRanges(); }}
                         className="rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
                       >
                         Cancel
@@ -367,46 +427,31 @@ export default function DocumentViewerPage() {
                 )}
               </div>
 
-              {activeAnchor && activeComments.length > 0 && (
+              {/* Inline comment highlights panel — raw mode only */}
+              {viewMode === 'raw' && activeAnchor && activeComments.length > 0 && (
                 <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-medium text-yellow-800">
                       Comments on selected range ({activeAnchor.start}–{activeAnchor.end})
                     </p>
-                    <button
-                      onClick={() => setActiveAnchor(null)}
-                      className="text-xs text-yellow-600 hover:text-yellow-800"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setActiveAnchor(null)} className="text-xs text-yellow-600 hover:text-yellow-800">✕</button>
                   </div>
                   <ul className="space-y-2">
                     {activeComments.map((c) => (
                       <li
                         key={c.id}
-                        className={`rounded border p-2 text-sm ${
-                          c.status === 'resolved'
-                            ? 'border-gray-200 bg-gray-50 opacity-60'
-                            : 'border-yellow-200 bg-white'
-                        }`}
+                        className={`rounded border p-2 text-sm ${c.status === 'resolved' ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-yellow-200 bg-white'}`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <span className="font-medium text-gray-700">{c.authorLabel}</span>
-                            <span className="ml-2 text-xs text-gray-400">
-                              {new Date(c.createdAt).toLocaleString()}
-                            </span>
+                            <span className="ml-2 text-xs text-gray-400">{new Date(c.createdAt).toLocaleString()}</span>
                             {c.status === 'resolved' && (
-                              <span className="ml-2 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500">
-                                resolved
-                              </span>
+                              <span className="ml-2 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500">resolved</span>
                             )}
                           </div>
                           {c.status === 'open' && (
-                            <button
-                              onClick={() => resolveComment(c.id)}
-                              className="flex-shrink-0 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-                            >
+                            <button onClick={() => resolveComment(c.id)} className="flex-shrink-0 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700">
                               Resolve
                             </button>
                           )}
@@ -418,13 +463,49 @@ export default function DocumentViewerPage() {
                 </div>
               )}
 
-              {comments.length > 0 && !activeAnchor && (
+              {viewMode === 'raw' && comments.length > 0 && !activeAnchor && (
                 <div className="mt-4 rounded border border-gray-100 bg-gray-50 px-3 py-2">
                   <p className="text-xs text-gray-500">
                     {comments.filter((c) => c.status === 'open').length} open ·{' '}
                     {comments.filter((c) => c.status === 'resolved').length} resolved inline comment
                     {comments.length !== 1 ? 's' : ''}. Click highlighted text to view.
                   </p>
+                </div>
+              )}
+
+              {/* Comments list — markdown mode */}
+              {viewMode === 'markdown' && comments.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                    Comments ({comments.filter((c) => c.status === 'open').length} open)
+                  </p>
+                  {comments.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`rounded-lg border p-3 text-sm ${c.status === 'resolved' ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-yellow-200 bg-yellow-50'}`}
+                    >
+                      {c.anchorStart !== null && c.anchorEnd !== null && (
+                        <blockquote className="mb-2 border-l-2 border-yellow-400 pl-2 font-mono text-xs text-gray-500">
+                          {doc.content.slice(c.anchorStart, c.anchorEnd)}
+                        </blockquote>
+                      )}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="font-medium text-gray-700">{c.authorLabel}</span>
+                          <span className="ml-2 text-xs text-gray-400">{new Date(c.createdAt).toLocaleString()}</span>
+                          {c.status === 'resolved' && (
+                            <span className="ml-2 rounded-full bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500">resolved</span>
+                          )}
+                        </div>
+                        {c.status === 'open' && (
+                          <button onClick={() => resolveComment(c.id)} className="flex-shrink-0 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700">
+                            Resolve
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-gray-700">{c.body}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

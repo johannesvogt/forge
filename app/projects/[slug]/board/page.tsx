@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useProject } from '../project-context';
+import { canTransition, type Column } from '@/lib/issues/state-machine';
 
 const COLUMNS = [
   { id: 'BACKLOG', label: 'Backlog' },
@@ -49,6 +50,9 @@ export default function BoardPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [dragging, setDragging] = useState<{ id: string; column: Column } | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<Column | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   const fetchIssues = useCallback(async () => {
     try {
@@ -86,6 +90,31 @@ export default function BoardPage() {
     }
   }
 
+  async function handleDrop(targetCol: Column) {
+    if (!dragging) return;
+    const source = dragging;
+    setDragging(null);
+    setDragOverCol(null);
+    if (!canTransition(source.column, targetCol)) return;
+
+    setIssues(prev => prev.map(i => i.id === source.id ? { ...i, column: targetCol } : i));
+
+    try {
+      const res = await fetch(`/api/issues/${source.id}/move?projectId=${projectId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ column: targetCol }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Move failed');
+      }
+    } catch (e) {
+      setMoveError(e instanceof Error ? e.message : 'Move failed');
+      await fetchIssues();
+    }
+  }
+
   const issuesByColumn = (colId: string) => issues.filter((i) => i.column === colId);
 
   if (loading) return <p className="text-gray-500">Loading board…</p>;
@@ -102,6 +131,13 @@ export default function BoardPage() {
           + New Issue
         </button>
       </div>
+
+      {moveError && (
+        <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700 flex items-center justify-between">
+          <span>{moveError}</span>
+          <button onClick={() => setMoveError(null)} className="ml-4 text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
 
       {showCreate && (
         <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -144,34 +180,83 @@ export default function BoardPage() {
       )}
 
       <div className="flex gap-3 overflow-x-auto pb-4">
-        {COLUMNS.map((col) => (
-          <div
-            key={col.id}
-            className={`flex-shrink-0 w-56 rounded-lg border ${columnClass(col.id)} p-3`}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <span className={`text-xs ${columnHeaderClass(col.id)}`}>{col.label}</span>
-              <span className="text-xs text-gray-400">{issuesByColumn(col.id).length}</span>
+        {COLUMNS.map((col) => {
+          const isValidTarget = dragging ? canTransition(dragging.column, col.id as Column) : false;
+          const isActive = dragOverCol === col.id && isValidTarget;
+          const isDimmed = dragging && !isValidTarget && dragging.column !== col.id;
+
+          return (
+            <div
+              key={col.id}
+              className={[
+                'flex-shrink-0 w-56 rounded-lg border p-3 transition-all',
+                columnClass(col.id),
+                isActive ? 'ring-2 ring-indigo-400 border-indigo-300 bg-indigo-50' : '',
+                isDimmed ? 'opacity-40' : '',
+                isValidTarget && !isActive ? 'ring-1 ring-indigo-200' : '',
+              ].join(' ')}
+              onDragOver={(e) => {
+                if (isValidTarget) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }
+              }}
+              onDragEnter={(e) => {
+                if (isValidTarget) {
+                  e.preventDefault();
+                  setDragOverCol(col.id as Column);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverCol(null);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDrop(col.id as Column);
+              }}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <span className={`text-xs ${columnHeaderClass(col.id)}`}>{col.label}</span>
+                <span className="text-xs text-gray-400">{issuesByColumn(col.id).length}</span>
+              </div>
+              <div className="space-y-2">
+                {issuesByColumn(col.id).map((issue) => (
+                  <Link
+                    key={issue.id}
+                    href={`/projects/${slug}/board/${issue.id}`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', issue.id);
+                      setDragging({ id: issue.id, column: issue.column as Column });
+                    }}
+                    onDragEnd={() => {
+                      setDragging(null);
+                      setDragOverCol(null);
+                    }}
+                    className={[
+                      'block rounded-md bg-white border border-gray-200 px-3 py-2 text-sm text-gray-800 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all',
+                      dragging?.id === issue.id ? 'opacity-40 cursor-grabbing' : 'cursor-grab',
+                    ].join(' ')}
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <span className="font-mono text-xs text-gray-400">{issue.key}</span>
+                      {issue.agentAssignee && (
+                        <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title={`Assigned to ${issue.agentAssignee}`} />
+                      )}
+                    </div>
+                    <span className="font-medium line-clamp-2">{issue.title}</span>
+                  </Link>
+                ))}
+                {isActive && (
+                  <div className="h-8 rounded-md border-2 border-dashed border-indigo-300 bg-indigo-50" />
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              {issuesByColumn(col.id).map((issue) => (
-                <Link
-                  key={issue.id}
-                  href={`/projects/${slug}/board/${issue.id}`}
-                  className="block rounded-md bg-white border border-gray-200 px-3 py-2 text-sm text-gray-800 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all"
-                >
-                  <div className="mb-1 flex items-center justify-between gap-1">
-                    <span className="font-mono text-xs text-gray-400">{issue.key}</span>
-                    {issue.agentAssignee && (
-                      <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title={`Assigned to ${issue.agentAssignee}`} />
-                    )}
-                  </div>
-                  <span className="font-medium line-clamp-2">{issue.title}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

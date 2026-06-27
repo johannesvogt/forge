@@ -69,9 +69,8 @@ export async function POST(
   if (!body.versionId || typeof body.versionId !== 'string') {
     return NextResponse.json({ error: 'versionId is required' }, { status: 400 });
   }
-  if (typeof body.anchorStart !== 'number' || typeof body.anchorEnd !== 'number') {
-    return NextResponse.json({ error: 'anchorStart and anchorEnd are required' }, { status: 400 });
-  }
+  const anchorStart = typeof body.anchorStart === 'number' ? body.anchorStart : null;
+  const anchorEnd = typeof body.anchorEnd === 'number' ? body.anchorEnd : null;
 
   // Verify document exists
   const doc = await prisma.document.findUnique({ where: { id } });
@@ -83,8 +82,8 @@ export async function POST(
     body: body.body.trim(),
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,
-    anchorStart: body.anchorStart,
-    anchorEnd: body.anchorEnd,
+    anchorStart,
+    anchorEnd,
   });
 
   return NextResponse.json(comment, { status: 201 });
