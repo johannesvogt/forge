@@ -14,20 +14,20 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
 
   server.tool(
     'list_issues',
-    'List issues, optionally filtered by column',
+    'List issues, optionally filtered by column. DONE issues older than 7 days are excluded.',
     { column: z.string().optional() },
     async ({ column }) => {
-      const issues = await listIssues(db, projectId, column);
+      const issues = await listIssues(db, projectId, column, { hideStaleDone: true });
       return { content: [{ type: 'text' as const, text: JSON.stringify(issues) }] };
     }
   );
 
   server.tool(
     'get_issue',
-    'Get a single issue by key (e.g. FORG-1) or id, including its dependsOn list',
+    'Get a single issue by key (e.g. FORG-1) or id, including its dependsOn list. DONE issues older than 7 days are not accessible.',
     { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
     async ({ id }) => {
-      const issue = await resolveIssue(db, projectId, id);
+      const issue = await resolveIssue(db, projectId, id, { hideStaleDone: true });
       if (!issue) throw new Error(`Issue not found: ${id}`);
       const dependsOn = await listDependencies(db, projectId, issue.id);
       return { content: [{ type: 'text' as const, text: JSON.stringify({ ...issue, dependsOn }) }] };

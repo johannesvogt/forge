@@ -50,9 +50,11 @@ export default function BoardPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showAllDone, setShowAllDone] = useState(false);
   const [dragging, setDragging] = useState<{ id: string; column: Column } | null>(null);
   const [dragOverCol, setDragOverCol] = useState<Column | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [forceConfirm, setForceConfirm] = useState<{ issueId: string; from: Column; to: Column } | null>(null);
 
   const fetchIssues = useCallback(async () => {
     try {
@@ -67,6 +69,11 @@ export default function BoardPage() {
   }, [projectId]);
 
   useEffect(() => { fetchIssues(); }, [fetchIssues]);
+
+  useEffect(() => {
+    const id = setInterval(() => { if (!dragging) fetchIssues(); }, 5000);
+    return () => clearInterval(id);
+  }, [fetchIssues, dragging]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -90,20 +97,12 @@ export default function BoardPage() {
     }
   }
 
-  async function handleDrop(targetCol: Column) {
-    if (!dragging) return;
-    const source = dragging;
-    setDragging(null);
-    setDragOverCol(null);
-    if (!canTransition(source.column, targetCol)) return;
-
-    setIssues(prev => prev.map(i => i.id === source.id ? { ...i, column: targetCol } : i));
-
+  async function executeMove(issueId: string, targetCol: Column, force: boolean) {
     try {
-      const res = await fetch(`/api/issues/${source.id}/move?projectId=${projectId}`, {
+      const res = await fetch(`/api/issues/${issueId}/move?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ column: targetCol }),
+        body: JSON.stringify({ column: targetCol, force }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -115,7 +114,43 @@ export default function BoardPage() {
     }
   }
 
-  const issuesByColumn = (colId: string) => issues.filter((i) => i.column === colId);
+  async function handleDrop(targetCol: Column) {
+    if (!dragging) return;
+    const source = dragging;
+    setDragging(null);
+    setDragOverCol(null);
+    if (source.column === targetCol) return;
+
+    if (!canTransition(source.column, targetCol)) {
+      setForceConfirm({ issueId: source.id, from: source.column, to: targetCol });
+      return;
+    }
+
+    setIssues(prev => prev.map(i => i.id === source.id ? { ...i, column: targetCol } : i));
+    await executeMove(source.id, targetCol, false);
+  }
+
+  async function handleForceMove() {
+    if (!forceConfirm) return;
+    const { issueId, to } = forceConfirm;
+    setForceConfirm(null);
+    setIssues(prev => prev.map(i => i.id === issueId ? { ...i, column: to } : i));
+    await executeMove(issueId, to, true);
+  }
+
+  const DONE_VISIBLE_MS = 7 * 24 * 60 * 60 * 1000;
+  const issuesByColumn = (colId: string) => {
+    const colIssues = issues.filter((i) => i.column === colId);
+    if (colId !== 'DONE' || showAllDone) return colIssues;
+    const cutoff = Date.now() - DONE_VISIBLE_MS;
+    return colIssues.filter((i) => {
+      const ts = (i as unknown as { doneAt?: string | null }).doneAt;
+      if (!ts) return true;
+      return new Date(ts).getTime() >= cutoff;
+    });
+  };
+
+  const colLabel = (id: string) => COLUMNS.find((c) => c.id === id)?.label ?? id;
 
   if (loading) return <p className="text-gray-500">Loading board…</p>;
   if (error) return <p className="text-red-600">Error: {error}</p>;
@@ -131,6 +166,32 @@ export default function BoardPage() {
           + New Issue
         </button>
       </div>
+
+      {forceConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-lg">
+            <h2 className="mb-2 text-base font-semibold text-gray-900">Move outside workflow?</h2>
+            <p className="mb-5 text-sm text-gray-500">
+              Moving from <span className="font-medium text-gray-700">{colLabel(forceConfirm.from)}</span> to{' '}
+              <span className="font-medium text-gray-700">{colLabel(forceConfirm.to)}</span> is not a supported workflow transition.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setForceConfirm(null)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleForceMove}
+                className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700"
+              >
+                Move anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {moveError && (
         <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700 flex items-center justify-between">
@@ -182,8 +243,9 @@ export default function BoardPage() {
       <div className="flex gap-3 overflow-x-auto pb-4">
         {COLUMNS.map((col) => {
           const isValidTarget = dragging ? canTransition(dragging.column, col.id as Column) : false;
-          const isActive = dragOverCol === col.id && isValidTarget;
-          const isDimmed = dragging && !isValidTarget && dragging.column !== col.id;
+          const isDroppable = dragging && dragging.column !== col.id;
+          const isActive = dragOverCol === col.id && isDroppable;
+          const isForced = isDroppable && !isValidTarget;
 
           return (
             <div
@@ -191,18 +253,18 @@ export default function BoardPage() {
               className={[
                 'flex-shrink-0 w-56 rounded-lg border p-3 transition-all',
                 columnClass(col.id),
-                isActive ? 'ring-2 ring-indigo-400 border-indigo-300 bg-indigo-50' : '',
-                isDimmed ? 'opacity-40' : '',
+                isActive && isValidTarget ? 'ring-2 ring-indigo-400 border-indigo-300 bg-indigo-50' : '',
+                isActive && isForced ? 'ring-2 ring-orange-400 border-orange-300 bg-orange-50' : '',
                 isValidTarget && !isActive ? 'ring-1 ring-indigo-200' : '',
               ].join(' ')}
               onDragOver={(e) => {
-                if (isValidTarget) {
+                if (isDroppable) {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
                 }
               }}
               onDragEnter={(e) => {
-                if (isValidTarget) {
+                if (isDroppable) {
                   e.preventDefault();
                   setDragOverCol(col.id as Column);
                 }
@@ -219,7 +281,18 @@ export default function BoardPage() {
             >
               <div className="mb-3 flex items-center justify-between">
                 <span className={`text-xs ${columnHeaderClass(col.id)}`}>{col.label}</span>
-                <span className="text-xs text-gray-400">{issuesByColumn(col.id).length}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400">{issuesByColumn(col.id).length}</span>
+                  {col.id === 'DONE' && (
+                    <button
+                      onClick={() => setShowAllDone((v) => !v)}
+                      className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+                      title={showAllDone ? 'Hide older issues' : 'Show older issues'}
+                    >
+                      {showAllDone ? 'less' : 'all'}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 {issuesByColumn(col.id).map((issue) => (
@@ -250,8 +323,11 @@ export default function BoardPage() {
                     <span className="font-medium line-clamp-2">{issue.title}</span>
                   </Link>
                 ))}
-                {isActive && (
+                {isActive && isValidTarget && (
                   <div className="h-8 rounded-md border-2 border-dashed border-indigo-300 bg-indigo-50" />
+                )}
+                {isActive && isForced && (
+                  <div className="h-8 rounded-md border-2 border-dashed border-orange-300 bg-orange-50" />
                 )}
               </div>
             </div>

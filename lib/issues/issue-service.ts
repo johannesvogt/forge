@@ -1,5 +1,7 @@
 import { canTransition, transition, COLUMNS, type Column } from './state-machine.ts';
 
+const DONE_VISIBLE_MS = 7 * 24 * 60 * 60 * 1000;
+
 function normalizeColumn(value: string): Column {
   const upper = value.toUpperCase().replace(/ /g, '_') as Column;
   if ((COLUMNS as readonly string[]).includes(upper)) return upper;
@@ -19,6 +21,7 @@ export interface Issue {
   column: string;
   agentAssignee: string | null;
   agentAssignTs: Date | null;
+  doneAt: Date | null;
   projectId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -46,9 +49,10 @@ interface Db {
   };
   issue: {
     create(args: { data: CreateInput & { projectId: string; key: string } }): Promise<Issue>;
-    findMany(args?: { where?: { projectId?: string; column?: string } }): Promise<Issue[]>;
+    findMany(args?: { where?: Record<string, unknown> }): Promise<Issue[]>;
     findUnique(args: { where: { id?: string; key?: string; projectId?: string } }): Promise<Issue | null>;
     update(args: { where: { id: string; projectId?: string }; data: Partial<Issue & { updatedAt: Date }> }): Promise<Issue>;
+    delete(args: { where: { id: string; projectId?: string } }): Promise<Issue>;
   };
   issueDependency: {
     create(args: { data: { dependentId: string; dependsOnId: string } }): Promise<IssueDependencyRecord>;
@@ -76,21 +80,49 @@ export async function createIssue(db: Db, projectId: string, input: CreateInput)
   });
 }
 
-export async function listIssues(db: Db, projectId: string, column?: string): Promise<Issue[]> {
-  return db.issue.findMany({ where: { projectId, ...(column ? { column } : {}) } });
+export async function listIssues(
+  db: Db,
+  projectId: string,
+  column?: string,
+  options: { hideStaleDone?: boolean } = {}
+): Promise<Issue[]> {
+  const where: Record<string, unknown> = { projectId, ...(column ? { column } : {}) };
+  if (options.hideStaleDone) {
+    const cutoff = new Date(Date.now() - DONE_VISIBLE_MS);
+    where.NOT = { column: 'DONE', doneAt: { lt: cutoff } };
+  }
+  return db.issue.findMany({ where });
 }
 
-export async function getIssue(db: Db, projectId: string, id: string): Promise<Issue | null> {
-  return db.issue.findUnique({ where: { id, projectId } });
+export async function getIssue(
+  db: Db,
+  projectId: string,
+  id: string,
+  options: { hideStaleDone?: boolean } = {}
+): Promise<Issue | null> {
+  const issue = await db.issue.findUnique({ where: { id, projectId } });
+  if (!issue) return null;
+  if (options.hideStaleDone && issue.column === 'DONE' && issue.doneAt) {
+    const cutoff = new Date(Date.now() - DONE_VISIBLE_MS);
+    if (issue.doneAt < cutoff) return null;
+  }
+  return issue;
 }
 
 export async function getIssueByKey(db: Db, projectId: string, key: string): Promise<Issue | null> {
   return db.issue.findUnique({ where: { key, projectId } });
 }
 
-export async function resolveIssue(db: Db, projectId: string, ref: string): Promise<Issue | null> {
-  if (/^[A-Z0-9]+-\d+$/.test(ref)) return getIssueByKey(db, projectId, ref);
-  return getIssue(db, projectId, ref);
+export async function resolveIssue(db: Db, projectId: string, ref: string, options: { hideStaleDone?: boolean } = {}): Promise<Issue | null> {
+  const issue = /^[A-Z0-9]+-\d+$/.test(ref)
+    ? await getIssueByKey(db, projectId, ref)
+    : await getIssue(db, projectId, ref);
+  if (!issue) return null;
+  if (options.hideStaleDone && issue.column === 'DONE' && issue.doneAt) {
+    const cutoff = new Date(Date.now() - DONE_VISIBLE_MS);
+    if (issue.doneAt < cutoff) return null;
+  }
+  return issue;
 }
 
 export async function updateIssue(db: Db, projectId: string, id: string, input: UpdateInput): Promise<Issue> {
@@ -100,12 +132,12 @@ export async function updateIssue(db: Db, projectId: string, id: string, input: 
   });
 }
 
-export async function moveIssue(db: Db, projectId: string, id: string, targetColumn: Column | string): Promise<Issue> {
+export async function moveIssue(db: Db, projectId: string, id: string, targetColumn: Column | string, force = false): Promise<Issue> {
   const issue = await db.issue.findUnique({ where: { id, projectId } });
   if (!issue) throw new Error(`Issue not found: ${id}`);
 
   const from = normalizeColumn(issue.column);
-  const to = transition(from, normalizeColumn(targetColumn));
+  const to = force ? normalizeColumn(targetColumn) : transition(from, normalizeColumn(targetColumn));
 
   if (from === 'TODO' && to === 'IN_PROGRESS') {
     const deps = await db.issueDependency.findMany({ where: { dependentId: id } });
@@ -118,9 +150,10 @@ export async function moveIssue(db: Db, projectId: string, id: string, targetCol
     }
   }
 
+  const doneAt = to === 'DONE' ? new Date() : from === 'DONE' ? null : undefined;
   return db.issue.update({
     where: { id, projectId },
-    data: { column: to, updatedAt: new Date() },
+    data: { column: to, updatedAt: new Date(), ...(doneAt !== undefined ? { doneAt } : {}) },
   });
 }
 
@@ -169,4 +202,10 @@ export async function unassignIssue(db: Db, projectId: string, id: string): Prom
     where: { id, projectId },
     data: { agentAssignee: null, agentAssignTs: null, updatedAt: new Date() },
   });
+}
+
+export async function deleteIssue(db: Db, projectId: string, id: string): Promise<void> {
+  const issue = await db.issue.findUnique({ where: { id, projectId } });
+  if (!issue) throw new Error(`Issue not found: ${id}`);
+  await db.issue.delete({ where: { id, projectId } });
 }

@@ -114,27 +114,20 @@ Codex connects to Forge the same way — via HTTP MCP with a project-scoped API 
 
 Same as Claude Code setup above (Settings → API Keys).
 
-### 2. Set the API key as an env var
-
-```bash
-# ~/.zshrc
-export FORGE_MCP_TOKEN=<your-api-key>
-```
-
-### 3. Add MCP server to Codex
+### 2. Add MCP server to Codex
 
 Add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.forge]
 url = "http://host.docker.internal:3000/api/mcp"
-bearer_token_env_var = "FORGE_MCP_TOKEN"
+http_headers = { "Authorization" = "Bearer <api-key>" }
 enabled = true
 ```
 
 `host.docker.internal` lets the Codex sandbox reach Forge running on your machine. If running Codex outside a sandbox, use `localhost` instead.
 
-### 4. Restart Codex
+### 3. Restart Codex
 
 MCP servers load at startup. Restart the session after editing the config.
 

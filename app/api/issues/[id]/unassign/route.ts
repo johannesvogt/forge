@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
-import { moveIssue } from '@/lib/issues/issue-service';
-import { COLUMNS, type Column } from '@/lib/issues/state-machine';
+import { unassignIssue } from '@/lib/issues/issue-service';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(
@@ -14,21 +13,10 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body.column !== 'string') {
-    return NextResponse.json({ error: 'column is required' }, { status: 400 });
-  }
-
-  if (!(COLUMNS as readonly string[]).includes(body.column)) {
-    return NextResponse.json({ error: 'Invalid column' }, { status: 400 });
-  }
-
-  const force = body.force === true;
-
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   try {
-    const issue = await moveIssue(prisma as any, projectId, id, body.column as Column, force);
+    const issue = await unassignIssue(prisma as any, projectId, id);
     return NextResponse.json(issue);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

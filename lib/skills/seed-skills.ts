@@ -131,8 +131,7 @@ You are performing an agent code review on an implementation issue that is in th
 
 ### 1. Claim the issue
 
-- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock.
-- Call \`move_issue(id, "IN_PROGRESS")\`
+- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock. If it fails, stop and output \`<promise>NO_ISSUES</promise>\`.
 - Call \`add_comment\` on the issue: "Picked up for agent review."
 
 ### 2. Load context
@@ -226,8 +225,7 @@ You are performing an agent review on a general issue (not an implementation or 
 
 ### 1. Claim the issue
 
-- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock.
-- Call \`move_issue(id, "IN_PROGRESS")\`
+- Call \`assign_issue(id)\` — this fails if another agent holds a non-stale lock. If it fails, stop and output \`<promise>NO_ISSUES</promise>\`.
 - Call \`add_comment\` on the issue: "Picked up for agent review."
 
 ### 2. Load context
@@ -463,7 +461,21 @@ An issue whose description starts with \`implementation-issue\` must be processe
 2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
 3. Call \`add_comment\` on the issue with body: "Picking up this issue."
 
-## Step 2 — Read the PRD
+## Step 2 — Read issue comments
+
+Call \`list_comments\` on the issue to load the full comment history.
+
+Scan comments newest-first. If the most recent comment starts with:
+
+\`\`\`
+ISSUE DID NOT PASS REVIEW, PLEASE READ COMMENTS AND IMPLEMENT REQUESTED CHANGES
+\`\`\`
+
+This is a **re-attempt after a failed review**. The numbered list of problems in that comment are your primary requirements. You must address every item — do not skip or partially fix any of them. Keep these problems in mind throughout all subsequent steps.
+
+Otherwise, read the comments for useful context (prior work, notes, partial implementations) and proceed normally.
+
+## Step 3 — Read the PRD
 
 Check the first line of the issue description for a PRD reference in the format \`implementation-issue, PRD: <prd-name>\`:
 
@@ -471,7 +483,7 @@ Check the first line of the issue description for a PRD reference in the format 
 - Call \`get_doc\` to read the full PRD content.
 - If no PRD is referenced, proceed using the issue description alone.
 
-## Step 3 — Write tests first (TDD — red phase)
+## Step 4 — Write tests first (TDD — red phase)
 
 Before writing any implementation:
 
@@ -481,7 +493,7 @@ Before writing any implementation:
 
 Do not write implementation code until the tests exist and are failing.
 
-## Step 4 — Implement (TDD — green + refactor)
+## Step 5 — Implement (TDD — green + refactor)
 
 1. Write the minimum implementation to make the failing tests pass.
 2. Run tests — iterate until all pass.
@@ -492,15 +504,15 @@ Do not write implementation code until the tests exist and are failing.
 
 Do not proceed until every test passes and there are no type errors.
 
-## Step 5 — Commit
+## Step 6 — Commit
 
 Commit all changes with a concise conventional-commit message describing what was implemented.
 
 Note the full commit SHA — you will need it in the next step.
 
-## Step 6 — Update the PRD
+## Step 7 — Update the PRD
 
-If a PRD was loaded in Step 2, call \`update_doc\` to append an implementation summary to it. Add a section at the end of the existing content:
+If a PRD was loaded in Step 3, call \`update_doc\` to append an implementation summary to it. Add a section at the end of the existing content:
 
 \`\`\`
 ## Implementation
@@ -511,7 +523,7 @@ If a PRD was loaded in Step 2, call \`update_doc\` to append an implementation s
 
 Do not rewrite the PRD body — only append this section.
 
-## Step 7 — Comment on the issue
+## Step 8 — Comment on the issue
 
 Call \`add_comment\` on the issue (\`target_type: "issue"\`) with a brief implementation note. Include:
 
@@ -527,7 +539,7 @@ Implemented:
 Commit: abc1234def5678
 \`\`\`
 
-## Step 8 — Move to Needs Agent Review
+## Step 9 — Move to Needs Agent Review
 
 1. Call \`unassign_issue\` to release the lock.
 2. Call \`move_issue\` with \`column: "NEEDS_AGENT_REVIEW"\`.
@@ -543,6 +555,7 @@ A separate agent will review the work with fresh context.
 | \`assign_issue\` | Claim the issue for this agent (enforces lock) |
 | \`unassign_issue\` | Release the lock when done |
 | \`get_issue\` | Read the issue description and acceptance criteria |
+| \`list_comments\` | Load all comments on the issue |
 | \`move_issue\` | Move the issue to a new column |
 | \`add_comment\` | Post a comment to the issue |
 | \`list_docs\` | List documents linked to the issue |
@@ -565,7 +578,21 @@ Use this skill for any issue that is NOT annotated with \`implementation-issue\`
 1. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
 2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
 
-## Step 2 — Read the PRD (if referenced)
+## Step 2 — Read issue comments
+
+Call \`list_comments\` on the issue to load the full comment history.
+
+Scan comments newest-first. If the most recent comment starts with:
+
+\`\`\`
+ISSUE DID NOT PASS REVIEW, PLEASE READ COMMENTS AND IMPLEMENT REQUESTED CHANGES
+\`\`\`
+
+This is a **re-attempt after a failed review**. The numbered list of problems in that comment are your primary requirements. You must address every item — do not skip or partially fix any of them. Keep these problems in mind throughout all subsequent steps.
+
+Otherwise, read the comments for useful context (prior work, decisions, partial work) and proceed normally.
+
+## Step 3 — Read the PRD (if referenced)
 
 Check the issue description for a PRD reference (a document ID, title, or phrase like "see PRD"):
 
@@ -573,7 +600,7 @@ Check the issue description for a PRD reference (a document ID, title, or phrase
 - If a PRD is found or referenced by name, call \`get_doc\` to read its full content.
 - If no PRD is referenced, proceed using the issue description alone.
 
-## Step 3 — Do the work
+## Step 4 — Do the work
 
 Read the issue description carefully and follow its instructions. The issue may ask you to:
 
@@ -584,9 +611,9 @@ Read the issue description carefully and follow its instructions. The issue may 
 
 Use your judgment to complete the work thoroughly. If the issue is ambiguous, do your best and note any assumptions in the closing comment.
 
-## Step 4 — Update the PRD (if applicable)
+## Step 5 — Update the PRD (if applicable)
 
-If a PRD was loaded in Step 2 and the work you did is relevant to it, call \`update_doc\` to append a summary section at the end of the existing PRD content:
+If a PRD was loaded in Step 3 and the work you did is relevant to it, call \`update_doc\` to append a summary section at the end of the existing PRD content:
 
 \`\`\`
 ## Update: <short title>
@@ -596,14 +623,14 @@ If a PRD was loaded in Step 2 and the work you did is relevant to it, call \`upd
 
 Do not rewrite the PRD body — only append.
 
-## Step 5 — Comment on the issue
+## Step 6 — Comment on the issue
 
 Call \`add_comment\` on the issue (\`target_type: "issue"\`) with a brief summary of what was done. Include:
 
 - What was completed (bullet list)
 - Any assumptions made or open questions remaining
 
-## Step 6 — Move to Needs Human Review
+## Step 7 — Move to Needs Human Review
 
 Call \`move_issue\` with \`column: "NEEDS_HUMAN_REVIEW"\`.
 
@@ -616,6 +643,7 @@ A human will review the output and either approve or send it back with feedback.
 | Tool | Purpose |
 |------|---------|
 | \`get_issue\` | Read the issue description |
+| \`list_comments\` | Load all comments on the issue |
 | \`move_issue\` | Move the issue to a new column |
 | \`add_comment\` | Post a comment to the issue |
 | \`list_docs\` | List documents linked to the issue |

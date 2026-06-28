@@ -82,6 +82,9 @@ export default function IssueDetailPage() {
   const [moving, setMoving] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [unassigning, setUnassigning] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentBody, setCommentBody] = useState('');
@@ -245,6 +248,23 @@ export default function IssueDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/issues/${id}?projectId=${projectId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? 'Delete failed');
+      }
+      router.push(`/projects/${slug}/board`);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Delete failed');
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
   async function handleAddDocument(e: React.FormEvent) {
     e.preventDefault();
     if (!docTitle.trim()) return;
@@ -320,17 +340,54 @@ export default function IssueDetailPage() {
         </Link>
       </div>
 
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-lg">
+            <h2 className="mb-2 text-base font-semibold text-gray-900">Delete issue?</h2>
+            <p className="mb-5 text-sm text-gray-500">
+              <span className="font-mono font-medium text-gray-700">{issue.key}</span> will be permanently deleted. This cannot be undone.
+            </p>
+            {deleteError && <p className="mb-3 text-xs text-red-600">{deleteError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <span className="mb-1 block font-mono text-xs font-medium text-gray-400">{issue.key}</span>
             <h1 className="text-xl font-semibold text-gray-900">{issue.title}</h1>
           </div>
-          <span
-            className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${columnBadge[issue.column] ?? 'bg-gray-100 text-gray-600'}`}
-          >
-            {colLabel(issue.column)}
-          </span>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${columnBadge[issue.column] ?? 'bg-gray-100 text-gray-600'}`}
+            >
+              {colLabel(issue.column)}
+            </span>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="rounded-md px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+              title="Delete issue"
+            >
+              Delete
+            </button>
+          </div>
         </div>
 
         {issue.description ? (

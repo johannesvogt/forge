@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
-import { getIssue, updateIssue } from '@/lib/issues/issue-service';
+import { getIssue, updateIssue, deleteIssue } from '@/lib/issues/issue-service';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -44,4 +44,24 @@ export async function PATCH(
   });
 
   return NextResponse.json(updated);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { id } = await params;
+
+  try {
+    await deleteIssue(prisma as any, projectId, id);
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Delete failed' }, { status: 400 });
+  }
 }
