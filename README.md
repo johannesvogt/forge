@@ -2,6 +2,8 @@
 
 AI-first project management system. Agents do the primary work via MCP; humans review and guide via web UI.
 
+![Project board](docs/images/screenshot-board.png)
+
 ---
 
 ## Quickstart
@@ -25,8 +27,6 @@ App runs at `http://localhost:3000`.
 ### Step 2 — Create a project
 
 Open `http://localhost:3000`, create a new project for the codebase you want to manage.
-
-![Project board](docs/images/screenshot-board.png)
 
 ---
 
