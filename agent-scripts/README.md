@@ -6,145 +6,78 @@ Scripts for running autonomous agents against a Forge project.
 
 | Script | Agent |
 |--------|-------|
-| `afk-claude.sh` | Claude Code (via `sbx`) |
-| `afk-codex.sh` | Codex (via `sbx`) |
-| `afk-noprd.sh` | Claude Code (via Docker sandbox, local `issues/` dir workflow) |
+| `afk.sh` | Claude Code or Codex (via `sbx`) |
 
 ---
 
-## afk-claude.sh
+## afk.sh
 
-Runs Claude Code via `sbx` in a loop. Each iteration picks up the highest-priority issue in the Forge board and works it to completion. The loop exits early if no issues are available.
+Runs either Claude Code or Codex via `sbx` in a loop. The first argument selects the agent, and every iteration picks up the highest-priority eligible Forge issue and works it to completion. Both agents use the same routing prompt.
 
 ### Prerequisites
 
-**One-time sandbox setup** — run this manually to initialise and authenticate:
+Authenticate each agent you intend to use once from the project directory:
 
 ```bash
 sbx run claude
-```
-
-You only need to do this once per project.
-
-### Usage
-
-```bash
-./agent-scripts/afk-claude.sh <iterations>
-```
-
-| Argument | Description |
-|----------|-------------|
-| `iterations` | Maximum number of issues to process before stopping |
-
-### Examples
-
-```bash
-# Process up to 5 issues
-./agent-scripts/afk-claude.sh 5
-
-# Run until the backlog is empty (large upper bound)
-./agent-scripts/afk-claude.sh 100
-```
-
-### Behaviour
-
-- Each iteration runs a fresh Claude Code session in the sandbox.
-- The agent finds the highest-priority issue (TODO column), assigns itself, and works it.
-- If no issues are available, the script exits early with a message.
-- Sessions run with `--permission-mode bypassPermissions` — the sandbox provides the isolation boundary.
-
-### Notes
-
-- The script assumes the project's `.mcp.json` is configured and the Forge server is reachable from inside the sandbox (default: `host.docker.internal:3000`).
-- Run `FORGE_HOST=localhost ./agent-scripts/afk-claude.sh 5` if you need to override the host for non-sandbox local use.
-
----
-
-## afk-codex.sh
-
-Equivalent to `afk-claude.sh` but runs Codex via the `sbx` command.
-
-### Prerequisites
-
-**One-time sandbox setup** — run this manually to initialise and authenticate:
-
-```bash
 sbx run codex
 ```
 
-You only need to do this once per project.
-
 ### Usage
 
 ```bash
-./agent-scripts/afk-codex.sh <iterations>
+./agent-scripts/afk.sh <claude|codex> [--todo-only | --review-only] [--model <model>] <iterations>
 ```
 
 | Argument | Description |
 |----------|-------------|
-| `iterations` | Maximum number of issues to process before stopping |
+| `claude` or `codex` | Agent to run; this must be the first argument |
+| `iterations` | Maximum number of issues to process before stopping; must be a positive integer |
+| `--todo-only` | Only process issues in the TODO column |
+| `--review-only` | Only process issues in the NEEDS_AGENT_REVIEW column |
+| `--model <model>` | Override the selected agent's configured model |
+
+Options may appear before or after `iterations`. `--todo-only` and `--review-only` are mutually exclusive.
 
 ### Examples
 
 ```bash
-# Process up to 5 issues
-./agent-scripts/afk-codex.sh 5
+# Process up to 5 issues with Claude Code
+./agent-scripts/afk.sh claude 5
 
-# Run until the backlog is empty (large upper bound)
-./agent-scripts/afk-codex.sh 100
+# Process up to 5 issues with Codex
+./agent-scripts/afk.sh codex 5
+
+# Only implement TODO issues
+./agent-scripts/afk.sh claude --todo-only 5
+
+# Only review issues
+./agent-scripts/afk.sh codex --review-only 5
+
+# Select a Claude model alias
+./agent-scripts/afk.sh claude --model sonnet 5
+
+# Select a Codex model
+./agent-scripts/afk.sh codex --model gpt-5.4 5
 ```
 
 ### Behaviour
 
-- Each iteration runs a fresh Codex session in the sandbox.
-- The agent finds the highest-priority issue (TODO column), assigns itself, and works it.
-- If no issues are available, the script exits early with a message.
-- Sessions run with `--approval-mode full-auto` — the sandbox provides the isolation boundary.
+- Each iteration runs a fresh session for the selected agent in the sandbox.
+- With no filter flag, the agent prioritizes NEEDS_AGENT_REVIEW issues and then TODO issues.
+- `--todo-only` restricts routing to TODO; `--review-only` restricts routing to NEEDS_AGENT_REVIEW.
+- If no eligible issues are available for the selected mode, the script exits early.
+- Claude Code sessions use `--permission-mode bypassPermissions`; the sandbox provides the isolation boundary.
+
+### Model selection
+
+For Claude Code, `--model` is passed to Claude's top-level `--model` option. Claude accepts aliases such as `sonnet`, `opus`, `haiku`, and `fable`, as well as full model names.
+
+For Codex, `--model` is passed to `codex exec --model`.
+
+If `--model` is omitted, the selected agent uses its configured default.
 
 ### Notes
 
-- The script assumes the project's `.mcp.json` is configured and the Forge server is reachable from inside the sandbox (default: `host.docker.internal:3000`).
-
----
-
-## afk-noprd.sh
-
-Runs Claude Code in a Docker sandbox in a loop, working against a local `issues/` directory instead of the Forge board. No PRD/Forge MCP setup required.
-
-### Prerequisites
-
-**One-time sandbox setup** — run this manually and follow the prompts:
-
-```bash
-docker sandbox run claude
-```
-
-You only need to do this once per project.
-
-### Usage
-
-```bash
-./agent-scripts/afk-noprd.sh <iterations>
-```
-
-| Argument | Description |
-|----------|-------------|
-| `iterations` | Maximum number of tasks to process before stopping |
-
-### Examples
-
-```bash
-# Process up to 5 tasks
-./agent-scripts/afk-noprd.sh 5
-```
-
-### Behaviour
-
-- Each iteration runs a fresh Claude Code session in the sandbox, seeded with `progress.txt`.
-- The agent picks the highest-priority task from the `issues/` directory that isn't marked done, implements it, runs tests/type checks, and appends its progress to `progress.txt`.
-- Completed issue files are renamed with a `-done.md` suffix.
-- If all tasks are complete, the script exits early with a message.
-
-### Notes
-
-- Requires an `issues/` directory of task files and a `progress.txt` file in the project root.
+- The script assumes the project's Forge MCP configuration is present and the Forge server is reachable from inside the sandbox at `host.docker.internal:3000`.
+- For Claude Code, run `FORGE_HOST=localhost ./agent-scripts/afk.sh claude 5` to override the host for non-sandbox local use.

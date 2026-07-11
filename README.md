@@ -111,14 +111,14 @@ Create `.claude/settings.json` at the same root:
     "SessionStart": [{
       "hooks": [{
         "type": "command",
-        "command": "echo 'Forge MCP connected. Call list_skills now to load available skill definitions before doing anything else.'"
+        "command": "echo 'Forge MCP connected. Follow the project instructions: call get_project_context and list_skills before doing anything else.'"
       }]
     }]
   }
 }
 ```
 
-`permissions.allow` removes approval prompts for all Forge MCP tools. The `SessionStart` hook tells Claude to call `list_skills` before doing anything else.
+`permissions.allow` removes approval prompts for all Forge MCP tools. The `SessionStart` hook reinforces the project startup instructions described below.
 
 Authenticate `sbx` once from the project directory:
 
@@ -159,16 +159,57 @@ Each API key is scoped to one project. The agent can only read and write issues,
 
 ---
 
+#### Load the Forge Project Context at every agent startup
+
+The Forge **Project Context** is the canonical glossary and project orientation stored in Forge. Keep it in Forge and load it through MCP at the beginning of every agent session so the agent does not work from a stale local copy.
+
+Codex reads `AGENTS.md` from the repository root before it starts work. Create `AGENTS.md` in the project where the agent will work:
+
+```markdown
+# Forge startup
+
+Before doing any work or answering the user's request:
+
+1. Call the Forge MCP tool `get_project_context` and treat the returned Project Context as the canonical source for domain language and project orientation.
+2. Call the Forge MCP tool `list_skills` to discover the workflows available for this project.
+3. If `get_project_context` fails, stop and report the MCP connection or authentication error instead of continuing without the Project Context.
+```
+
+Claude Code reads `CLAUDE.md`, not `AGENTS.md`. To share the same instructions without duplicating them, create `CLAUDE.md` beside `AGENTS.md` and import it:
+
+```markdown
+@AGENTS.md
+```
+
+The resulting project setup is:
+
+```text
+your-project/
+├── AGENTS.md
+├── CLAUDE.md
+├── .mcp.json
+└── ...
+```
+
+Launch Claude Code or Codex from this project directory. Both tools load their project instruction files once at the start of each new session; the instruction then causes the agent to fetch the current Project Context from Forge. Start a new session after changing either instruction file.
+
+To verify the setup, start each agent and ask it to state which project instructions it loaded and summarize the Forge Project Context. Confirm that it calls `get_project_context` rather than reading a local `CONTEXT.md`.
+
+> Project instruction files guide model behavior but are not a hard execution hook. Claude's `SessionStart` hook above provides an additional reminder; for both agents, verify the MCP call when validating a new project setup.
+
+Official references: [Claude Code project memory](https://docs.anthropic.com/en/docs/claude-code/memory) and [Codex custom instructions with AGENTS.md](https://developers.openai.com/codex/guides/agents-md).
+
+---
+
 ### Step 4 — Set up the AFK scripts
 
-The AFK scripts run agents in a loop, each iteration picking up and completing one issue.
+The AFK script runs Claude Code or Codex in a loop, with each iteration picking up and completing one issue.
 
-Copy the scripts to your project root:
+Copy the script to your project root:
 
 ```bash
-cp /path/to/forge/agent-scripts/afk-claude.sh .   # for Claude Code
-cp /path/to/forge/agent-scripts/afk-codex.sh .    # for Codex
-chmod +x afk-claude.sh afk-codex.sh
+cp /path/to/forge/agent-scripts/afk.sh .
+chmod +x afk.sh
 ```
 
 See [`agent-scripts/README.md`](agent-scripts/README.md) for prerequisites and usage.
@@ -207,10 +248,26 @@ New issues land in **BACKLOG**. Move the ones you want worked to **TODO** in the
 
 ```bash
 # Claude Code
-./afk-claude.sh 10
+./afk.sh claude 10
 
 # Codex
-./afk-codex.sh 10
+./afk.sh codex 10
+
+# Only implement issues from TODO
+./afk.sh claude --todo-only 10
+
+# Only review issues from Needs Agent Review
+./afk.sh codex --review-only 10
+
+# Select a model for Claude Code
+./afk.sh claude --model sonnet --todo-only 10
+
+# Select a model for Codex
+./afk.sh codex --model gpt-5.4 --review-only 10
 ```
 
-Each iteration claims one issue, implements it, and moves it to **Needs Agent Review**. A second agent pass reviews the work and moves it to **Done** or sends it back with feedback.
+Without a filter flag, each iteration prioritizes **Needs Agent Review**, then **TODO**. Use `--todo-only` to restrict the agent to implementation work in **TODO**, or `--review-only` to restrict it to review work in **Needs Agent Review**. The flags are mutually exclusive and can be placed before or after the positive integer iteration count.
+
+Use `--model <model>` to override the agent's configured model for every iteration. For Claude Code, the value is passed to its top-level `--model` option and may be an alias such as `sonnet`, `opus`, `haiku`, or `fable`, or a full model name. For Codex, it is passed to `codex exec --model`. Omitting the option preserves the tool's configured default.
+
+An implementation pass moves completed work to **Needs Agent Review**. A review pass moves it to **Done** or sends it back with feedback. The loop exits early when no eligible issues remain for the selected mode.
