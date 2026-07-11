@@ -10,13 +10,46 @@ AI-first project management system. Agents do the primary work via MCP; humans r
 
 ### Step 1 — Start Forge locally
 
-**Prerequisites:** Node.js 22+, PostgreSQL (or use `docker-compose.yml`)
+**Prerequisites:** Node.js 22+, Docker (for the database)
+
+#### 1a — Start the database
+
+```bash
+docker compose up -d
+```
+
+This starts PostgreSQL on port **5433**. Set `DATABASE_URL` in `.env.local`:
+
+```
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/forge
+```
+
+#### 1b — Install, migrate, and seed
 
 ```bash
 npm install
-cp .env.example .env
-# edit .env — set DATABASE_URL
 npx prisma migrate dev
+npx prisma db seed
+```
+
+The seed creates a default user:
+
+| Field    | Value              |
+|----------|--------------------|
+| Email    | `admin@forge.local` |
+| Password | `password`         |
+
+Use these credentials to log in at `http://localhost:3000`.
+
+To override before seeding:
+
+```bash
+SEED_EMAIL=you@example.com SEED_PASSWORD=secret npx prisma db seed
+```
+
+#### 1c — Start the app
+
+```bash
 npm run dev
 ```
 
@@ -87,22 +120,16 @@ Create `.claude/settings.json` at the same root:
 
 `permissions.allow` removes approval prompts for all Forge MCP tools. The `SessionStart` hook tells Claude to call `list_skills` before doing anything else.
 
-Authenticate the Docker sandbox once from the project directory:
+Authenticate `sbx` once from the project directory:
 
 ```bash
-docker sandbox run claude
+sbx run claude
 ```
 
-Then allow the sandbox to reach Forge on localhost (substitute the sandbox name printed on first startup):
+Verify the MCP connection by starting Claude via `sbx`:
 
 ```bash
-docker sandbox network proxy <sandbox-name> --allow-host localhost
-```
-
-Verify the MCP connection by starting Claude inside the sandbox:
-
-```bash
-docker sandbox run claude
+sbx run claude
 ```
 
 Then prompt Claude:

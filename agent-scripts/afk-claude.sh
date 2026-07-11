@@ -8,16 +8,15 @@ fi
 
 for ((i=1; i<=$1; i++)); do
   echo "Starting iteration $i"
-  result=$(docker sandbox run claude -- --permission-mode bypassPermissions -p " \
+  result=$(sbx run claude -- --permission-mode bypassPermissions -p " \
   Call list_skills to load available skills, then find and work exactly ONE issue using the routing rules below. \
   \
   ROUTING RULES (apply in order): \
   1. If any issue is in NEEDS_AGENT_REVIEW column with description starting with 'implementation-issue' or 'refactoring-issue': pick the highest-priority one and invoke the review-implementation-issue skill. \
   2. Else if any issue is in NEEDS_AGENT_REVIEW column: pick the highest-priority one and invoke the review-general-issue skill. \
   3. Else if any issue is in TODO column with description starting with 'implementation-issue': pick the highest-priority one and invoke the process-implementation-issue skill. \
-  4. Else if any issue is in TODO column with description starting with 'refactoring-issue': pick the highest-priority one and invoke the process-implementation-issue skill. \
-  5. Else if any issue is in TODO column: pick the highest-priority one and invoke the process-general-issue skill. \
-  6. Else: output <promise>NO_ISSUES</promise> and stop. \
+  4. Else if any issue is in TODO column: pick the highest-priority one and invoke the process-general-issue skill. \
+  5. Else: output <promise>NO_ISSUES</promise> and stop. \
   \
   RULES: \
   - Work exactly ONE issue per run. Do not move to a second issue. \

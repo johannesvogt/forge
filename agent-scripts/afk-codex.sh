@@ -8,7 +8,7 @@ fi
 
 for ((i=1; i<=$1; i++)); do
   echo "Starting iteration $i"
-  result=$(sbx run codex -- " \
+  result=$(sbx run codex -- exec " \
   Call list_skills to load available skills, then find and work exactly ONE issue using the routing rules below. \
   \
   ROUTING RULES (apply in order): \
@@ -28,7 +28,7 @@ for ((i=1; i<=$1; i++)); do
 
   echo "$result"
 
-  if [[ "$result" == *"<promise>NO_ISSUES</promise>"* ]]; then
+  if [[ "$result" == *"<promise>NO_ISSUES</promise>" ]]; then
     echo "No open issues after $i iterations."
     exit 0
   fi
