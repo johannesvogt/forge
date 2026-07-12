@@ -24,8 +24,10 @@ describe('canTransition — valid moves', () => {
     ['IN_PROGRESS', 'DONE'],
     ['NEEDS_HUMAN_REVIEW', 'DONE'],
     ['NEEDS_HUMAN_REVIEW', 'IN_PROGRESS'],
+    ['NEEDS_HUMAN_REVIEW', 'TODO'],
     ['NEEDS_AGENT_REVIEW', 'DONE'],
     ['NEEDS_AGENT_REVIEW', 'IN_PROGRESS'],
+    ['NEEDS_AGENT_REVIEW', 'TODO'],
   ];
 
   for (const [from, to] of valid) {
@@ -47,10 +49,8 @@ describe('canTransition — invalid moves', () => {
     ['IN_PROGRESS', 'BACKLOG'],
     ['IN_PROGRESS', 'TODO'],
     ['NEEDS_HUMAN_REVIEW', 'BACKLOG'],
-    ['NEEDS_HUMAN_REVIEW', 'TODO'],
     ['NEEDS_HUMAN_REVIEW', 'NEEDS_AGENT_REVIEW'],
     ['NEEDS_AGENT_REVIEW', 'BACKLOG'],
-    ['NEEDS_AGENT_REVIEW', 'TODO'],
     ['NEEDS_AGENT_REVIEW', 'NEEDS_HUMAN_REVIEW'],
     ['DONE', 'BACKLOG'],
     ['DONE', 'TODO'],

@@ -219,4 +219,15 @@ describe('moveIssue', () => {
     const moved = await moveIssue(db as any, projectAId, issue.id, 'NEEDS_HUMAN_REVIEW');
     assert.equal(moved.column, 'NEEDS_HUMAN_REVIEW');
   });
+
+  it('moves an issue from agent review back to TODO', async () => {
+    const issue = await createIssue(db as any, projectAId, { title: 'test-issue-review-return' });
+    await moveIssue(db as any, projectAId, issue.id, 'TODO');
+    await moveIssue(db as any, projectAId, issue.id, 'IN_PROGRESS');
+    await moveIssue(db as any, projectAId, issue.id, 'NEEDS_AGENT_REVIEW');
+
+    const moved = await moveIssue(db as any, projectAId, issue.id, 'TODO');
+
+    assert.equal(moved.column, 'TODO');
+  });
 });

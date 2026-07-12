@@ -108,12 +108,12 @@ for ((i=1; i<=iterations; i++)); do
   else
     agent_args=(exec)
     [ -z "$model" ] || agent_args+=(--model "$model")
-    result=$(sbx run codex -- "${agent_args[@]}" "$prompt")
+    result=$(sbx run codex -- ${agent_args[@]} "$prompt")
   fi
 
   echo "$result"
 
-  if [[ "$result" == *"<promise>NO_ISSUES</promise>"* ]]; then
+  if [[ "$result" == *"<promise>NO_ISSUES</promise>" ]]; then
     echo "No open issues after $i iterations."
     exit 0
   fi
