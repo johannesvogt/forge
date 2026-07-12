@@ -575,12 +575,13 @@ Use this skill for any issue that is NOT annotated with \`implementation-issue\`
 
 ## Step 1 — Claim the issue
 
-1. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
+1. Call \`assign_issue\` to assign the issue to yourself. This fails if another agent holds a non-stale lock (less than 4 hours old). If it fails, do not work on the issue; stop and output \`<promise>NO_ISSUES</promise>\`.
 2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
+3. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
 
 ## Step 2 — Read issue comments
 
-Call \`list_comments\` on the issue to load the full comment history.
+Call \`list_comments\` on the issue to load the full comment history. You must read all comments before doing any work: previous agents or reviewers may have left requirements, hints, decisions, warnings, or details about partial work that are not present in the issue description.
 
 Scan comments newest-first. If the most recent comment starts with:
 
@@ -590,7 +591,7 @@ ISSUE DID NOT PASS REVIEW, PLEASE READ COMMENTS AND IMPLEMENT REQUESTED CHANGES
 
 This is a **re-attempt after a failed review**. The numbered list of problems in that comment are your primary requirements. You must address every item — do not skip or partially fix any of them. Keep these problems in mind throughout all subsequent steps.
 
-Otherwise, read the comments for useful context (prior work, decisions, partial work) and proceed normally.
+Otherwise, incorporate any useful context from every comment (including prior-agent hints, decisions, warnings, and partial work) before proceeding.
 
 ## Step 3 — Read the PRD (if referenced)
 
@@ -630,11 +631,14 @@ Call \`add_comment\` on the issue (\`target_type: "issue"\`) with a brief summar
 - What was completed (bullet list)
 - Any assumptions made or open questions remaining
 
-## Step 7 — Move to Needs Human Review
+## Step 7 — Complete and release the issue
 
-Call \`move_issue\` with \`column: "NEEDS_HUMAN_REVIEW"\`.
+1. Call \`move_issue\` with \`column: "NEEDS_HUMAN_REVIEW"\`.
+2. Call \`unassign_issue\` to release your assignment. This must be your final issue-lifecycle action: never finish the task while the issue remains assigned to you.
 
 A human will review the output and either approve or send it back with feedback.
+
+If you must stop early after successfully calling \`assign_issue\`, add a comment explaining why and call \`unassign_issue\` before ending the session. Every terminal path after assignment must release the issue.
 
 ---
 
@@ -642,6 +646,8 @@ A human will review the output and either approve or send it back with feedback.
 
 | Tool | Purpose |
 |------|---------|
+| \`assign_issue\` | Assign the issue to yourself and acquire its agent lock |
+| \`unassign_issue\` | Release your assignment after the work is complete |
 | \`get_issue\` | Read the issue description |
 | \`list_comments\` | Load all comments on the issue |
 | \`move_issue\` | Move the issue to a new column |
