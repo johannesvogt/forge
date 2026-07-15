@@ -682,6 +682,18 @@ describe('update_doc', () => {
 });
 
 describe('list_docs', () => {
+  it('returns all project documents when issue_id is omitted', async () => {
+    const title = `${TEST_PREFIX}-standalone-doc`;
+    await client.callTool({
+      name: 'create_doc',
+      arguments: { title, content: 'standalone content' },
+    });
+
+    const result = await client.callTool({ name: 'list_docs', arguments: {} });
+    const docs = parseText(result) as Array<{ title: string; content: string }>;
+    assert.ok(docs.some((doc) => doc.title === title && doc.content === 'standalone content'));
+  });
+
   it('returns documents linked to an issue', async () => {
     const issueId = `${TEST_PREFIX}-list-docs-issue`;
     await client.callTool({

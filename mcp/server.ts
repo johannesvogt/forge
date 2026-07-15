@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createIssue, listIssues, getIssue, updateIssue, moveIssue, addDependency, removeDependency, listDependencies, resolveIssue, assignIssue, unassignIssue } from '../lib/issues/issue-service.ts';
 import { addComment, listComments } from '../lib/comments/comment-service.ts';
-import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocumentsByIssue } from '../lib/documents/document-service.ts';
+import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocuments, listDocumentsByIssue } from '../lib/documents/document-service.ts';
 import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
 import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
 import { getProjectContext, updateProjectContext } from '../lib/context/context-service.ts';
@@ -211,12 +211,14 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
 
   server.tool(
     'list_docs',
-    'List documents linked to an issue',
+    'List all project documents, optionally filtered to documents linked to an issue',
     {
-      issue_id: z.string(),
+      issue_id: z.string().optional(),
     },
     async ({ issue_id }) => {
-      const docs = await listDocumentsByIssue(db, projectId, issue_id);
+      const docs = issue_id === undefined
+        ? await listDocuments(db, projectId)
+        : await listDocumentsByIssue(db, projectId, issue_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(docs) }] };
     }
   );

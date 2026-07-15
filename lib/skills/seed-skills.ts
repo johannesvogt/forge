@@ -294,7 +294,7 @@ If everything is complete and correct:
 ## Step 1 — Bootstrap domain context (do this before asking anything)
 
 1. Call \`get_project_context\`. Note whether it is empty or populated.
-2. Call \`list_docs\` and read any ADR documents found.
+2. Call \`list_docs\` without an issue ID to discover all project documents, then call \`get_doc\` to read every document whose title starts with "ADR:".
 3. Briefly tell the user what you loaded: existing terms, past decisions, or "no context yet — we will build it together."
 
 ## Step 2 — Interview
