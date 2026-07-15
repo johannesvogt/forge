@@ -458,7 +458,7 @@ An issue whose description starts with \`implementation-issue\` must be processe
 ## Step 1 — Claim the issue
 
 1. Call \`assign_issue\` — this fails if another agent holds a non-stale lock (less than 4 hours old). If it fails, stop and output \`<promise>NO_ISSUES</promise>\`.
-2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
+2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`. If it fails because a dependency is not DONE, call \`unassign_issue\` and continue the AFK routing search for another eligible issue. This failed attempt does not count as the one issue for the run.
 3. Call \`add_comment\` on the issue with body: "Picking up this issue."
 
 ## Step 2 — Read issue comments
@@ -576,7 +576,7 @@ Use this skill for any issue that is NOT annotated with \`implementation-issue\`
 ## Step 1 — Claim the issue
 
 1. Call \`assign_issue\` to assign the issue to yourself. This fails if another agent holds a non-stale lock (less than 4 hours old). If it fails, do not work on the issue; stop and output \`<promise>NO_ISSUES</promise>\`.
-2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`.
+2. Call \`move_issue\` with \`column: "IN_PROGRESS"\`. If it fails because a dependency is not DONE, call \`unassign_issue\` and continue the AFK routing search for another eligible issue. This failed attempt does not count as the one issue for the run.
 3. Call \`add_comment\` on the issue (\`target_type: "issue"\`) with body: "Picking up this issue."
 
 ## Step 2 — Read issue comments
