@@ -1,26 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { createProject, listProjects } from '@/lib/projects/project-service';
 import { SlugConflictError } from '@/lib/projects/project-service';
 import { parseCreateProjectBody, formatProject } from '@/lib/api/projects';
 import { prisma } from '@/lib/prisma';
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET(request: NextRequest) {
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
   const projects = await listProjects(prisma as any);
   return NextResponse.json(projects.map(formatProject));
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
   const raw = await request.json().catch(() => null);
   const parsed = parseCreateProjectBody(raw);
@@ -31,7 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const project = await createProject(prisma as any, {
       name: parsed.name,
-      createdByUserId: session.user.id,
+      createdByUserId: identity.principal.userId,
     });
     return NextResponse.json(formatProject(project), { status: 201 });
   } catch (err) {

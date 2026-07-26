@@ -1,29 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { addDependency, listDependencies, resolveIssue } from '@/lib/issues/issue-service';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   const { id } = await params;
   const deps = await listDependencies(prisma as any, projectId, id);
   return NextResponse.json(deps);
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body.dependsOnId !== 'string' || !body.dependsOnId.trim()) {
     return NextResponse.json({ error: 'dependsOnId is required' }, { status: 400 });
   }
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   const { id } = await params;
   try {
     const dependent = await resolveIssue(prisma as any, projectId, id);

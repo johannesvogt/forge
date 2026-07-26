@@ -25,6 +25,7 @@ export interface QueryResult<R = Record<string, unknown>> {
 
 export interface TestPool {
   query<R = any>(sql: string, params?: unknown[]): Promise<QueryResult<R>>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
   end(): Promise<void>;
 }
 
@@ -95,6 +96,11 @@ export function createTestPool(): TestPool {
     return row as R;
   }
 
+  // better-sqlite3 is synchronous, but service callbacks await query promises.
+  // Serialize interactive transactions so another callback cannot enter while a
+  // transaction owns this connection.
+  let transactionTail: Promise<void> = Promise.resolve();
+
   return {
     async query<R>(sql: string, params: unknown[] = []): Promise<QueryResult<R>> {
       const statement = db.prepare(translate(sql, toSqliteTimestamp(new Date())));
@@ -108,6 +114,24 @@ export function createTestPool(): TestPool {
       }
       const rows = statement.all(bindings) as Record<string, unknown>[];
       return { rows: rows.map((row) => revive<R>(row)) };
+    },
+
+    async transaction<T>(operation: () => Promise<T>): Promise<T> {
+      let release!: () => void;
+      const previous = transactionTail;
+      transactionTail = new Promise<void>((resolve) => { release = resolve; });
+      await previous;
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const result = await operation();
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      } finally {
+        release();
+      }
     },
 
     async end(): Promise<void> {

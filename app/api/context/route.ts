@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { getProjectContext, updateProjectContext } from '@/lib/context/context-service';
 import { prisma } from '@/lib/prisma';
 import { readFile } from 'node:fs/promises';
@@ -16,10 +15,10 @@ async function seedFromFile(): Promise<string> {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   let ctx = await getProjectContext(prisma as any, projectId);
   if (!ctx) {
     const content = await seedFromFile();
@@ -35,20 +34,20 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body.content !== 'string') {
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
   }
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
-  const userName = (session.user as { name?: string }).name ?? session.user.id;
+  const { projectId } = identity;
+  const { author } = identity;
   const { context, warning } = await updateProjectContext(prisma as any, projectId, {
     content: body.content,
-    authorLabel: userName,
-    authorUserId: session.user.id,
+    authorLabel: author.authorLabel,
+    authorUserId: author.authorUserId,
   });
 
   return NextResponse.json({ context, warning });

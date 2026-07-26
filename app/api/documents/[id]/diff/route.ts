@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { diffDocumentVersions } from '@/lib/documents/document-service';
 import { prisma } from '@/lib/prisma';
 
@@ -8,8 +7,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
   const { id } = await params;
   const fromParam = request.nextUrl.searchParams.get('from');
@@ -26,7 +25,7 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid version numbers' }, { status: 400 });
   }
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   const diff = await diffDocumentVersions(prisma as any, projectId, id, fromVersion, toVersion);
   if (diff === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 

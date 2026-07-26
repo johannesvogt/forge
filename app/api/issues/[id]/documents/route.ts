@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
@@ -8,10 +7,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only' });
+  if (!identity.ok) return identity.response;
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   const { id } = await params;
   const docs = await projectArtifacts(prisma as any, projectId).listDocumentsByIssue(id);
   if (!docs) return NextResponse.json({ error: 'Not found' }, { status: 404 });

@@ -1,34 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
-import { extractBearer } from '@/lib/auth/bearer';
-import { findActiveApiKey } from '@/lib/auth/api-key-service';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
-async function resolveAuthor(
-  request: NextRequest
-): Promise<{ authorUserId: string | null; authorLabel: string } | null> {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
-    return {
-      authorUserId: session.user.id,
-      authorLabel: session.user.name ?? session.user.email ?? 'Unknown',
-    };
-  }
-
-  const token = extractBearer(request.headers.get('authorization'));
-  if (token) {
-    const agent = await findActiveApiKey(prisma, token);
-    if (agent) return { authorUserId: null, authorLabel: agent.label };
-  }
-
-  return null;
-}
-
 export async function POST(request: NextRequest) {
-  const author = await resolveAuthor(request);
-  if (!author) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const identity = await resolveRequestIdentity(request, { policy: 'either' });
+  if (!identity.ok) return identity.response;
+  const { author } = identity;
 
   const body = await request.json().catch(() => null);
   if (
@@ -47,7 +25,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const { projectId } = identity;
   const diff = await projectArtifacts(prisma as any, projectId).uploadDiff({
     title: body.title.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,

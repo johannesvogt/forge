@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { createApiKey, listApiKeys } from '@/lib/auth/api-key-service';
 import { prisma } from '@/lib/prisma';
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET(request: NextRequest) {
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
-  const keys = await listApiKeys(prisma, session.user.id);
+  const keys = await listApiKeys(prisma, identity.principal.userId);
   return NextResponse.json(
     keys.map((k) => ({
       id: k.id,
@@ -24,10 +21,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body.label !== 'string' || body.label.trim().length === 0) {
@@ -36,10 +31,15 @@ export async function POST(request: NextRequest) {
   if (!body.projectId || typeof body.projectId !== 'string') {
     return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
   }
+  const projectIdentity = await resolveRequestIdentity(request, {
+    policy: 'human-only',
+    projectId: body.projectId,
+  });
+  if (!projectIdentity.ok) return projectIdentity.response;
 
   const { rawKey, record } = await createApiKey(
     prisma,
-    session.user.id,
+    identity.principal.userId,
     body.label.trim(),
     body.projectId
   );

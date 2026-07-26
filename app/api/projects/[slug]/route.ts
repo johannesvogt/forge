@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/nextauth-config';
+import { resolveRequestIdentity } from '@/lib/auth/request-identity';
 import { getProject, deleteProject } from '@/lib/projects/project-service';
 import { formatProject } from '@/lib/api/projects';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
   const { slug } = await params;
   const project = await getProject(prisma as any, slug);
@@ -22,13 +19,11 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const identity = await resolveRequestIdentity(request, { policy: 'human-only', project: 'none' });
+  if (!identity.ok) return identity.response;
 
   const { slug } = await params;
   const project = await getProject(prisma as any, slug);

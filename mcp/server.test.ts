@@ -18,8 +18,8 @@ const TEST_DOC_ISSUE_ID = `${TEST_PREFIX}-doc-issue`;
 let testUserId: string;
 let testProjectId: string;
 
-function makeDbClient(pool: TestPool) {
-  return {
+function makeDbClient(pool: TestPool): any { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const client: any = { // eslint-disable-line @typescript-eslint/no-explicit-any
     project: {
       update: async ({ where }: { where: { id: string } }) => {
         const r = await pool.query(
@@ -30,12 +30,12 @@ function makeDbClient(pool: TestPool) {
       },
     },
     document: {
-      create: async ({ data }: { data: { title: string; projectId: string } }) => {
+      create: async ({ data }: { data: { title: string; projectId: string; latestVersionNumber?: number } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Document" (id, title, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$4) RETURNING *`,
-          [id, data.title, data.projectId, now]
+          `INSERT INTO "Document" (id, title, "projectId", "latestVersionNumber", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$5) RETURNING *`,
+          [id, data.title, data.projectId, data.latestVersionNumber ?? 1, now]
         );
         return r.rows[0];
       },
@@ -47,10 +47,13 @@ function makeDbClient(pool: TestPool) {
         const r = await pool.query(`SELECT * FROM "Document" WHERE "projectId" = $1`, [where.projectId]);
         return r.rows;
       },
-      update: async ({ where, data }: { where: { id: string }; data: { updatedAt: Date } }) => {
+      update: async ({ where, data }: {
+        where: { id: string };
+        data: { updatedAt: Date; latestVersionNumber?: { increment: number } };
+      }) => {
         const r = await pool.query(
-          `UPDATE "Document" SET "updatedAt" = $2 WHERE id = $1 RETURNING *`,
-          [where.id, data.updatedAt]
+          `UPDATE "Document" SET "updatedAt" = $2, "latestVersionNumber" = "latestVersionNumber" + $3 WHERE id = $1 RETURNING *`,
+          [where.id, data.updatedAt, data.latestVersionNumber?.increment ?? 0]
         );
         return r.rows[0];
       },
@@ -144,6 +147,13 @@ function makeDbClient(pool: TestPool) {
       },
     },
     issue: {
+      findFirst: async ({ where }: { where: { id: string; projectId: string } }) => {
+        const r = await pool.query(
+          `SELECT id FROM "Issue" WHERE id = $1 AND "projectId" = $2 LIMIT 1`,
+          [where.id, where.projectId]
+        );
+        return r.rows[0] ?? null;
+      },
       create: async ({ data }: { data: { key: string; title: string; description?: string; column?: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
@@ -413,6 +423,9 @@ function makeDbClient(pool: TestPool) {
       },
     },
   };
+  client.$transaction = async <T>(operation: (tx: typeof client) => Promise<T>): Promise<T> =>
+    pool.transaction(() => operation(client));
+  return client;
 }
 
 type DbClient = ReturnType<typeof makeDbClient>;

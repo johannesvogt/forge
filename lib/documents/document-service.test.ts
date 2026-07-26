@@ -11,6 +11,7 @@ import {
   getDocumentAtVersion,
   listDocumentVersions,
   diffDocumentVersions,
+  DocumentIssueProjectError,
   type Document,
 } from './document-service.ts';
 
@@ -23,16 +24,25 @@ let projectBId: string;
 
 const TEST_ISSUE_ID = `test-issue-${crypto.randomUUID()}`;
 const TEST_ISSUE_ID_2 = `test-issue-${crypto.randomUUID()}`;
+const TEST_ISSUE_B_ID = `test-issue-b-${crypto.randomUUID()}`;
 
-function makeDbClient(pool: TestPool) {
-  return {
+function makeDbClient(pool: TestPool): any { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const client: any = { // eslint-disable-line @typescript-eslint/no-explicit-any
+    issue: {
+      findFirst: async ({ where }: { where: { id: string; projectId: string } }) => {
+        // Most generated issue ids belong to project A; this distinguished id
+        // lets the ownership tests model an issue in project B.
+        const owner = where.id === TEST_ISSUE_B_ID ? projectBId : projectAId;
+        return where.projectId === owner ? { id: where.id } : null;
+      },
+    },
     document: {
-      create: async ({ data }: { data: { title: string; projectId: string } }) => {
+      create: async ({ data }: { data: { title: string; projectId: string; latestVersionNumber?: number } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Document" (id, title, "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$4) RETURNING *`,
-          [id, data.title, data.projectId, now]
+          `INSERT INTO "Document" (id, title, "projectId", "latestVersionNumber", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$5) RETURNING *`,
+          [id, data.title, data.projectId, data.latestVersionNumber ?? 1, now]
         );
         return r.rows[0];
       },
@@ -44,10 +54,14 @@ function makeDbClient(pool: TestPool) {
         const r = await pool.query(`SELECT * FROM "Document" WHERE "projectId" = $1`, [where.projectId]);
         return r.rows;
       },
-      update: async ({ where, data }: { where: { id: string }; data: { updatedAt: Date } }) => {
+      update: async ({ where, data }: {
+        where: { id: string };
+        data: { updatedAt: Date; latestVersionNumber?: { increment: number } };
+      }) => {
+        const increment = data.latestVersionNumber?.increment ?? 0;
         const r = await pool.query(
-          `UPDATE "Document" SET "updatedAt" = $2 WHERE id = $1 RETURNING *`,
-          [where.id, data.updatedAt]
+          `UPDATE "Document" SET "updatedAt" = $2, "latestVersionNumber" = "latestVersionNumber" + $3 WHERE id = $1 RETURNING *`,
+          [where.id, data.updatedAt, increment]
         );
         return r.rows[0];
       },
@@ -141,6 +155,9 @@ function makeDbClient(pool: TestPool) {
       },
     },
   };
+  client.$transaction = async <T>(operation: (tx: typeof client) => Promise<T>): Promise<T> =>
+    pool.transaction(() => operation(client));
+  return client;
 }
 
 type DbClient = ReturnType<typeof makeDbClient>;
@@ -216,6 +233,45 @@ describe('createDocument', () => {
     const ids = docs.map((d) => d.id);
     assert.ok(ids.includes(doc.id), 'newly created doc should appear in issue list');
   });
+
+  it('validates issue ownership before writing', async () => {
+    await assert.rejects(
+      createDocument(db as any, projectAId, {
+        title: 'Invalid issue owner', content: 'content', issueId: TEST_ISSUE_B_ID, authorLabel: 'Agent',
+      }),
+      DocumentIssueProjectError
+    );
+    const rows = await pool.query(`SELECT id FROM "Document" WHERE title = $1`, ['Invalid issue owner']);
+    assert.equal(rows.rows.length, 0);
+  });
+
+  it('rolls back the Document when Version 1 fails', async () => {
+    const failingDb = {
+      ...db,
+      $transaction: (operation: (tx: any) => Promise<unknown>) => db.$transaction((tx: any) =>
+        operation({ ...tx, documentVersion: { ...tx.documentVersion, create: async () => { throw new Error('injected version failure'); } } })
+      ),
+    };
+    await assert.rejects(createDocument(failingDb, projectAId, {
+      title: 'Rolled back create', content: 'content', authorLabel: 'Agent',
+    }), /injected version failure/);
+    const rows = await pool.query(`SELECT id FROM "Document" WHERE title = $1`, ['Rolled back create']);
+    assert.equal(rows.rows.length, 0);
+  });
+
+  it('rolls back the Document and Version when issue linking fails', async () => {
+    const failingDb = {
+      ...db,
+      $transaction: (operation: (tx: any) => Promise<unknown>) => db.$transaction((tx: any) =>
+        operation({ ...tx, documentIssueLink: { ...tx.documentIssueLink, createMany: async () => { throw new Error('injected link failure'); } } })
+      ),
+    };
+    await assert.rejects(createDocument(failingDb, projectAId, {
+      title: 'Rolled back link', content: 'content', issueId: TEST_ISSUE_ID, authorLabel: 'Agent',
+    }), /injected link failure/);
+    const rows = await pool.query(`SELECT id FROM "Document" WHERE title = $1`, ['Rolled back link']);
+    assert.equal(rows.rows.length, 0);
+  });
 });
 
 describe('getDocument', () => {
@@ -258,7 +314,7 @@ describe('getDocument', () => {
     const doc = await createDocument(db as any, projectBId, {
       title: 'Cross Project Doc',
       content: 'Should not be visible',
-      issueId: TEST_ISSUE_ID,
+      issueId: TEST_ISSUE_B_ID,
       authorLabel: 'Agent',
     });
     const result = await getDocument(db as any, projectAId, doc.id);
@@ -309,13 +365,13 @@ describe('listDocumentsByIssue', () => {
     assert.equal(docs[0].versionNumber, 1);
   });
 
-  it('does not return documents from another project for the same issueId', async () => {
+  it('does not return documents from another project', async () => {
     const issueId = `test-issue-${crypto.randomUUID()}`;
     await createDocument(db as any, projectAId, { title: 'Proj A Doc', content: 'a', issueId, authorLabel: 'A' });
-    await createDocument(db as any, projectBId, { title: 'Proj B Doc', content: 'b', issueId, authorLabel: 'B' });
+    await createDocument(db as any, projectBId, { title: 'Proj B Doc', content: 'b', issueId: TEST_ISSUE_B_ID, authorLabel: 'B' });
 
     const docsA = await listDocumentsByIssue(db as any, projectAId, issueId);
-    const docsB = await listDocumentsByIssue(db as any, projectBId, issueId);
+    const docsB = await listDocumentsByIssue(db as any, projectBId, TEST_ISSUE_B_ID);
 
     assert.ok(docsA.every((d) => d.projectId === projectAId));
     assert.ok(docsB.every((d) => d.projectId === projectBId));
@@ -435,6 +491,58 @@ describe('updateDocument', () => {
     assert.ok(latest !== null);
     assert.equal(latest.content, 'new');
     assert.equal(latest.versionNumber, 2);
+  });
+
+  it('allocates distinct monotonic numbers for concurrent updates', async () => {
+    const doc = await createDocument(db as any, projectAId, {
+      title: 'Concurrent versions', content: 'v1', authorLabel: 'Alice',
+    });
+    const updates = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      updateDocument(db as any, projectAId, doc.id, { content: `write ${index}`, authorLabel: 'Agent' })
+    ));
+    assert.deepEqual(
+      updates.map((item) => item?.versionNumber).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      [2, 3, 4, 5, 6, 7, 8, 9]
+    );
+    const versions = await listDocumentVersions(db as any, projectAId, doc.id);
+    assert.deepEqual(versions.map((version) => version.versionNumber), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('does not create a Version when the metadata update fails', async () => {
+    const doc = await createDocument(db as any, projectAId, {
+      title: 'Failed metadata', content: 'v1', authorLabel: 'Alice',
+    });
+    const failingDb = {
+      ...db,
+      $transaction: (operation: (tx: any) => Promise<unknown>) => db.$transaction((tx: any) =>
+        operation({ ...tx, document: { ...tx.document, update: async () => { throw new Error('injected metadata failure'); } } })
+      ),
+    };
+    await assert.rejects(updateDocument(failingDb, projectAId, doc.id, {
+      content: 'must not persist', authorLabel: 'Agent',
+    }), /injected metadata failure/);
+    assert.deepEqual((await listDocumentVersions(db as any, projectAId, doc.id)).map((v) => v.versionNumber), [1]);
+  });
+
+  it('rolls back the counter and timestamp when Version creation fails', async () => {
+    const doc = await createDocument(db as any, projectAId, {
+      title: 'Failed update', content: 'v1', authorLabel: 'Alice',
+    });
+    const before = await db.document.findUnique({ where: { id: doc.id } });
+    const failingDb = {
+      ...db,
+      $transaction: (operation: (tx: any) => Promise<unknown>) => db.$transaction((tx: any) =>
+        operation({ ...tx, documentVersion: { ...tx.documentVersion, create: async () => { throw new Error('injected update failure'); } } })
+      ),
+    };
+    await assert.rejects(updateDocument(failingDb, projectAId, doc.id, {
+      content: 'must not persist', authorLabel: 'Agent',
+    }), /injected update failure/);
+
+    const after = await db.document.findUnique({ where: { id: doc.id } });
+    assert.equal(after.latestVersionNumber, 1);
+    assert.equal(after.updatedAt.getTime(), before.updatedAt.getTime());
+    assert.deepEqual((await listDocumentVersions(db as any, projectAId, doc.id)).map((v) => v.versionNumber), [1]);
   });
 });
 

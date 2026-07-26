@@ -21,6 +21,7 @@ interface RawDocument {
   id: string;
   title: string;
   projectId: string;
+  latestVersionNumber?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,11 +45,18 @@ interface CreateInput {
 }
 
 interface Db {
+  $transaction<T>(operation: (tx: Db) => Promise<T>): Promise<T>;
+  issue: {
+    findFirst(args: { where: { id: string; projectId: string } }): Promise<{ id: string } | null>;
+  };
   document: {
-    create(args: { data: { title: string; projectId: string } }): Promise<RawDocument>;
+    create(args: { data: { title: string; projectId: string; latestVersionNumber?: number } }): Promise<RawDocument>;
     findUnique(args: { where: { id: string } }): Promise<RawDocument | null>;
     findMany(args: { where: { projectId: string } }): Promise<RawDocument[]>;
-    update(args: { where: { id: string }; data: { updatedAt: Date } }): Promise<RawDocument>;
+    update(args: {
+      where: { id: string };
+      data: { updatedAt: Date; latestVersionNumber?: { increment: number } };
+    }): Promise<RawDocument>;
   };
   documentVersion: {
     create(args: {
@@ -78,33 +86,51 @@ interface Db {
   };
 }
 
-export async function createDocument(db: Db, projectId: string, input: CreateInput): Promise<Document> {
-  const doc = await db.document.create({ data: { title: input.title, projectId } });
-  const version = await db.documentVersion.create({
-    data: {
-      documentId: doc.id,
-      versionNumber: 1,
-      content: input.content,
-      authorUserId: input.authorUserId ?? null,
-      authorLabel: input.authorLabel,
-    },
-  });
-  if (input.issueId) {
-    await db.documentIssueLink.createMany({
-      data: [{ documentId: doc.id, issueId: input.issueId }],
-      skipDuplicates: true,
-    });
+export class DocumentIssueProjectError extends Error {
+  constructor() {
+    super('The issue does not belong to the document project');
+    this.name = 'DocumentIssueProjectError';
   }
-  return {
-    id: doc.id,
-    title: doc.title,
-    content: version.content,
-    versionNumber: version.versionNumber,
-    versionId: version.id,
-    projectId: doc.projectId,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
-  };
+}
+
+export async function createDocument(db: Db, projectId: string, input: CreateInput): Promise<Document> {
+  return db.$transaction(async (tx) => {
+    // Validate in the same transaction as the writes. This closes the race where
+    // an issue is moved/deleted after a caller performs its own ownership check.
+    if (input.issueId) {
+      const issue = await tx.issue.findFirst({ where: { id: input.issueId, projectId } });
+      if (!issue) throw new DocumentIssueProjectError();
+    }
+
+    const doc = await tx.document.create({
+      data: { title: input.title, projectId, latestVersionNumber: 1 },
+    });
+    const version = await tx.documentVersion.create({
+      data: {
+        documentId: doc.id,
+        versionNumber: 1,
+        content: input.content,
+        authorUserId: input.authorUserId ?? null,
+        authorLabel: input.authorLabel,
+      },
+    });
+    if (input.issueId) {
+      await tx.documentIssueLink.createMany({
+        data: [{ documentId: doc.id, issueId: input.issueId }],
+        skipDuplicates: true,
+      });
+    }
+    return {
+      id: doc.id,
+      title: doc.title,
+      content: version.content,
+      versionNumber: version.versionNumber,
+      versionId: version.id,
+      projectId: doc.projectId,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    };
+  });
 }
 
 export async function getDocument(db: Db, projectId: string, id: string): Promise<Document | null> {
@@ -158,38 +184,43 @@ export async function updateDocument(
   id: string,
   input: { content: string; authorUserId?: string | null; authorLabel: string }
 ): Promise<Document | null> {
-  const doc = await db.document.findUnique({ where: { id } });
-  if (!doc || doc.projectId !== projectId) return null;
+  return db.$transaction(async (tx) => {
+    const doc = await tx.document.findUnique({ where: { id } });
+    if (!doc || doc.projectId !== projectId) return null;
 
-  const latest = await db.documentVersion.findFirst({
-    where: { documentId: id },
-    orderBy: { versionNumber: 'desc' },
+    // The database performs this increment while holding the Document row. Two
+    // writers therefore receive different numbers without a read/calculate race.
+    // If creating the Version fails, the increment and timestamp roll back too.
+    const updatedDoc = await tx.document.update({
+      where: { id },
+      data: { updatedAt: new Date(), latestVersionNumber: { increment: 1 } },
+    });
+    const nextVersionNumber = updatedDoc.latestVersionNumber;
+    if (nextVersionNumber === undefined) {
+      throw new Error('Document persistence adapter did not return latestVersionNumber');
+    }
+
+    const version = await tx.documentVersion.create({
+      data: {
+        documentId: id,
+        versionNumber: nextVersionNumber,
+        content: input.content,
+        authorUserId: input.authorUserId ?? null,
+        authorLabel: input.authorLabel,
+      },
+    });
+
+    return {
+      id: updatedDoc.id,
+      title: updatedDoc.title,
+      content: version.content,
+      versionNumber: version.versionNumber,
+      versionId: version.id,
+      projectId: updatedDoc.projectId,
+      createdAt: updatedDoc.createdAt,
+      updatedAt: updatedDoc.updatedAt,
+    };
   });
-  const nextVersionNumber = (latest?.versionNumber ?? 0) + 1;
-
-  const version = await db.documentVersion.create({
-    data: {
-      documentId: id,
-      versionNumber: nextVersionNumber,
-      content: input.content,
-      authorUserId: input.authorUserId ?? null,
-      authorLabel: input.authorLabel,
-    },
-  });
-
-  const now = new Date();
-  const updatedDoc = await db.document.update({ where: { id }, data: { updatedAt: now } });
-
-  return {
-    id: updatedDoc.id,
-    title: updatedDoc.title,
-    content: version.content,
-    versionNumber: version.versionNumber,
-    versionId: version.id,
-    projectId: updatedDoc.projectId,
-    createdAt: updatedDoc.createdAt,
-    updatedAt: updatedDoc.updatedAt,
-  };
 }
 
 export async function listDocumentVersions(
