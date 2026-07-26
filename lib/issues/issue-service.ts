@@ -43,7 +43,8 @@ interface IssueDependencyRecord {
   dependsOnId: string;
 }
 
-interface Db {
+/** Persistence primitives used by issue services and administrative/recovery tooling. */
+export interface Db {
   project: {
     update(args: { where: { id: string }; data: { issueCounter: { increment: number } }; select: { issueCounter: true; name: true } }): Promise<{ issueCounter: number; name: string }>;
   };
@@ -132,6 +133,10 @@ export async function updateIssue(db: Db, projectId: string, id: string, input: 
   });
 }
 
+/**
+ * Administrative/recovery primitive. Agents should use agentIssueWorkflow instead,
+ * which owns assignment, dependency, and transition invariants atomically.
+ */
 export async function moveIssue(db: Db, projectId: string, id: string, targetColumn: Column | string, force = false): Promise<Issue> {
   const issue = await db.issue.findUnique({ where: { id, projectId } });
   if (!issue) throw new Error(`Issue not found: ${id}`);
@@ -180,6 +185,7 @@ export async function listDependencies(db: Db, projectId: string, issueId: strin
 
 const STALE_LOCK_MS = 4 * 60 * 60 * 1000;
 
+/** Administrative/recovery primitive; not part of the Agent workflow API. */
 export async function assignIssue(db: Db, projectId: string, id: string, agentLabel: string): Promise<Issue> {
   const issue = await db.issue.findUnique({ where: { id, projectId } });
   if (!issue) throw new Error(`Issue not found: ${id}`);
@@ -195,6 +201,7 @@ export async function assignIssue(db: Db, projectId: string, id: string, agentLa
   });
 }
 
+/** Administrative/recovery primitive; not part of the Agent workflow API. */
 export async function unassignIssue(db: Db, projectId: string, id: string): Promise<Issue> {
   const issue = await db.issue.findUnique({ where: { id, projectId } });
   if (!issue) throw new Error(`Issue not found: ${id}`);

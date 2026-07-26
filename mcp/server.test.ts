@@ -571,29 +571,39 @@ describe('update_issue', () => {
   });
 });
 
-describe('move_issue', () => {
-  it('moves issue to a valid next column', async () => {
+describe('Agent issue workflow', () => {
+  it('begins work and submits it to the selected review queue', async () => {
     const created = await client.callTool({
       name: 'create_issue',
-      arguments: { title: `${TEST_PREFIX}-move-1`, column: 'TODO' },
+      arguments: { title: `${TEST_PREFIX}-workflow-1`, column: 'TODO' },
     });
     const { id } = parseText(created) as { id: string };
-    const result = await client.callTool({
-      name: 'move_issue',
-      arguments: { id, column: 'IN_PROGRESS' },
-    });
-    const issue = parseText(result) as { column: string };
-    assert.equal(issue.column, 'IN_PROGRESS');
+
+    const begun = parseText(await client.callTool({ name: 'begin_issue_work', arguments: { id } })) as {
+      column: string; agentAssignee: string;
+    };
+    assert.equal(begun.column, 'IN_PROGRESS');
+    assert.equal(begun.agentAssignee, AGENT_LABEL);
+
+    const submitted = parseText(await client.callTool({
+      name: 'submit_issue_for_review', arguments: { id, review: 'agent' },
+    })) as { column: string; agentAssignee: null };
+    assert.equal(submitted.column, 'NEEDS_AGENT_REVIEW');
+    assert.equal(submitted.agentAssignee, null);
   });
 
-  it('returns isError for invalid transition', async () => {
+  it('rejects beginning BACKLOG work without assigning it', async () => {
     const created = await client.callTool({
-      name: 'create_issue',
-      arguments: { title: `${TEST_PREFIX}-move-2` },
+      name: 'create_issue', arguments: { title: `${TEST_PREFIX}-workflow-backlog` },
     });
     const { id } = parseText(created) as { id: string };
-    const result = await client.callTool({ name: 'move_issue', arguments: { id, column: 'DONE' } });
+    const result = await client.callTool({ name: 'begin_issue_work', arguments: { id } });
     assert.equal((result as { isError?: boolean }).isError, true);
+    const issue = parseText(await client.callTool({ name: 'get_issue', arguments: { id } })) as {
+      column: string; agentAssignee: null;
+    };
+    assert.equal(issue.column, 'BACKLOG');
+    assert.equal(issue.agentAssignee, null);
   });
 });
 

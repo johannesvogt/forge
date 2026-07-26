@@ -1,13 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createIssue, listIssues, getIssue, updateIssue, moveIssue, addDependency, removeDependency, listDependencies, resolveIssue, assignIssue, unassignIssue } from '../lib/issues/issue-service.ts';
+import { createIssue, listIssues, updateIssue, addDependency, removeDependency, listDependencies, resolveIssue } from '../lib/issues/issue-service.ts';
+import { agentIssueWorkflow } from '../lib/issues/agent-issue-workflow.ts';
 import { projectArtifacts, type CommentAnchor, type CommentTarget } from '../lib/artifacts/project-artifact-service.ts';
 import { getDocument, getDocumentAtVersion, updateDocument, listDocuments } from '../lib/documents/document-service.ts';
 import { getDiff } from '../lib/diffs/diff-service.ts';
 import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
 import { getProjectContext, updateProjectContext } from '../lib/context/context-service.ts';
 import { agentLabelFromHeaders } from '../lib/auth/agent-identity.ts';
-import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createMcpServer(db: any, agentLabel: string, projectId: string): McpServer {
@@ -15,6 +15,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
   const agentLabelForRequest = (extra?: { requestInfo?: { headers?: Record<string, string | string[] | undefined> } }) =>
     agentLabelFromHeaders(extra?.requestInfo?.headers, agentLabel);
   const artifacts = projectArtifacts(db, projectId);
+  const issueWorkflow = agentIssueWorkflow(db, projectId);
   const commentTarget = (type: string, id: string): CommentTarget => {
     if (type === 'issue') return { type: 'issue', issueId: id };
     if (type === 'document_section') return { type: 'documentVersion', versionId: id };
@@ -75,18 +76,25 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
   );
 
   server.tool(
-    'move_issue',
-    'Move an issue to a new column, enforcing the state machine. Accepts key (e.g. FORG-1) or internal id.',
+    'begin_issue_work',
+    'Claim a TODO issue and begin work. Assignment, dependency gates, and the IN_PROGRESS transition are enforced atomically.',
+    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
+    async ({ id }, extra) => {
+      const issue = await issueWorkflow.beginWork(id, agentLabelForRequest(extra));
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
+    }
+  );
+
+  server.tool(
+    'submit_issue_for_review',
+    'Submit this agent\'s IN_PROGRESS issue for human or agent review and release the assignment atomically.',
     {
       id: z.string().describe('Issue key (e.g. FORG-1) or internal id'),
-      column: z.string(),
+      review: z.enum(['human', 'agent']),
     },
-    async ({ id, column }) => {
-      const issue = await resolveIssue(db, projectId, id);
-      if (!issue) throw new Error(`Issue not found: ${id}`);
-      if (issue.column === 'BACKLOG') throw new Error('Agents cannot move issues out of BACKLOG. A human must promote the issue to TODO first.');
-      const moved = await moveIssue(db, projectId, issue.id, column as Column);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(moved) }] };
+    async ({ id, review }, extra) => {
+      const issue = await issueWorkflow.submitForReview(id, agentLabelForRequest(extra), review);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(issue) }] };
     }
   );
 
@@ -289,31 +297,6 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       const result = await getSkillWithFiles(db, projectId, name);
       if (!result) throw new Error(`Skill not found: ${name}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
-    }
-  );
-
-  server.tool(
-    'assign_issue',
-    'Claim an issue for this agent. Fails if another agent holds a lock younger than 4 hours. Accepts key (e.g. FORG-1) or internal id.',
-    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
-    async ({ id }, extra) => {
-      const issue = await resolveIssue(db, projectId, id);
-      if (!issue) throw new Error(`Issue not found: ${id}`);
-      if (issue.column === 'BACKLOG') throw new Error('Agents cannot claim BACKLOG issues. A human must promote the issue to TODO first.');
-      const assigned = await assignIssue(db, projectId, issue.id, agentLabelForRequest(extra));
-      return { content: [{ type: 'text' as const, text: JSON.stringify(assigned) }] };
-    }
-  );
-
-  server.tool(
-    'unassign_issue',
-    'Release this agent\'s claim on an issue. Call when the task is done or abandoned. Accepts key (e.g. FORG-1) or internal id.',
-    { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
-    async ({ id }) => {
-      const issue = await resolveIssue(db, projectId, id);
-      if (!issue) throw new Error(`Issue not found: ${id}`);
-      const unassigned = await unassignIssue(db, projectId, issue.id);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(unassigned) }] };
     }
   );
 
