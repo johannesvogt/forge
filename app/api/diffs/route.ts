@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { uploadDiff } from '@/lib/diffs/diff-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
-  const diff = await uploadDiff(prisma as any, projectId, {
+  const diff = await projectArtifacts(prisma as any, projectId).uploadDiff({
     title: body.title.trim(),
     description: typeof body.description === 'string' ? body.description : undefined,
     branch: body.branch.trim(),
@@ -58,5 +58,6 @@ export async function POST(request: NextRequest) {
     authorLabel: author.authorLabel,
   });
 
+  if (!diff) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   return NextResponse.json(diff, { status: 201 });
 }

@@ -445,6 +445,27 @@ before(async () => {
   );
   testProjectId = projectId;
 
+  // Artifact APIs now require every referenced issue to exist in this project.
+  const artifactIssueIds = [
+    TEST_DOC_ISSUE_ID,
+    `${TEST_PREFIX}-list-docs-issue`,
+    `${TEST_PREFIX}-no-docs-issue`,
+    `${TEST_PREFIX}-diff-issue`,
+    `${TEST_PREFIX}-list-diffs-issue`,
+    `${TEST_PREFIX}-no-diffs-issue`,
+    `${TEST_PREFIX}-isolation-diff-issue-A`,
+    `${TEST_PREFIX}-isolation-diff-issue-B`,
+    `${TEST_PREFIX}-diff-comment-issue`,
+    `${TEST_PREFIX}-diff-anchor-issue`,
+    `${TEST_PREFIX}-diff-isolation-issue`,
+  ];
+  for (const [index, id] of artifactIssueIds.entries()) {
+    await pool.query(
+      `INSERT INTO "Issue" (id, "key", title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,'','TODO',$4,NOW(),NOW())`,
+      [id, `ART-${index + 1}`, `Artifact fixture ${index + 1}`, projectId]
+    );
+  }
+
   client = await makeClient();
 });
 

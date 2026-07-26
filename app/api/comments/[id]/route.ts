@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
-import { resolveComment } from '@/lib/comments/comment-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 export async function PATCH(
@@ -17,10 +17,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'status must be "resolved"' }, { status: 400 });
   }
 
-  try {
-    const comment = await resolveComment(prisma as any, id);
-    return NextResponse.json(comment);
-  } catch {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  }
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
+  const comment = await projectArtifacts(prisma as any, projectId).resolveComment(id);
+  if (!comment) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  return NextResponse.json(comment);
 }

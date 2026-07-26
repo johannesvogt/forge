@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
-import { deleteSkillFile } from '@/lib/skills/skill-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 export async function DELETE(
@@ -12,7 +12,8 @@ export async function DELETE(
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
-  const { fileId } = await params;
-  await deleteSkillFile(prisma as any, projectId, fileId);
+  const { id, fileId } = await params;
+  const deleted = await projectArtifacts(prisma as any, projectId).deleteSkillFile(id, fileId);
+  if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return new NextResponse(null, { status: 204 });
 }

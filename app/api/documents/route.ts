@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { createDocument, listDocuments } from '@/lib/documents/document-service';
+import { listDocuments } from '@/lib/documents/document-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
-  const doc = await createDocument(prisma as any, projectId, {
+  const doc = await projectArtifacts(prisma as any, projectId).createDocument({
     title: body.title.trim(),
     content: body.content,
     issueId: typeof body.issueId === 'string' && body.issueId.trim().length > 0 ? body.issueId.trim() : null,
@@ -58,5 +59,6 @@ export async function POST(request: NextRequest) {
     authorLabel: author.authorLabel,
   });
 
+  if (!doc) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   return NextResponse.json(doc, { status: 201 });
 }

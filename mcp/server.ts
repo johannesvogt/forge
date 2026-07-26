@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createIssue, listIssues, getIssue, updateIssue, moveIssue, addDependency, removeDependency, listDependencies, resolveIssue, assignIssue, unassignIssue } from '../lib/issues/issue-service.ts';
-import { addComment, listComments } from '../lib/comments/comment-service.ts';
-import { createDocument, getDocument, getDocumentAtVersion, updateDocument, listDocuments, listDocumentsByIssue } from '../lib/documents/document-service.ts';
-import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
+import { projectArtifacts, type CommentAnchor, type CommentTarget } from '../lib/artifacts/project-artifact-service.ts';
+import { getDocument, getDocumentAtVersion, updateDocument, listDocuments } from '../lib/documents/document-service.ts';
+import { getDiff } from '../lib/diffs/diff-service.ts';
 import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
 import { getProjectContext, updateProjectContext } from '../lib/context/context-service.ts';
 import { agentLabelFromHeaders } from '../lib/auth/agent-identity.ts';
@@ -14,6 +14,13 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
   const server = new McpServer({ name: 'forge-mcp', version: '1.0.0' });
   const agentLabelForRequest = (extra?: { requestInfo?: { headers?: Record<string, string | string[] | undefined> } }) =>
     agentLabelFromHeaders(extra?.requestInfo?.headers, agentLabel);
+  const artifacts = projectArtifacts(db, projectId);
+  const commentTarget = (type: string, id: string): CommentTarget => {
+    if (type === 'issue') return { type: 'issue', issueId: id };
+    if (type === 'document_section') return { type: 'documentVersion', versionId: id };
+    if (type === 'diff_line') return { type: 'diff', diffId: id };
+    throw new Error(`Unsupported comment target type: ${type}`);
+  };
 
   server.tool(
     'list_issues',
@@ -99,13 +106,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         .optional(),
     },
     async ({ target_type, target_id, anchor }) => {
-      let resolvedTargetId = target_id;
-      if (target_type === 'issue') {
-        const issue = await resolveIssue(db, projectId, target_id);
-        if (!issue) throw new Error(`Issue not found: ${target_id}`);
-        resolvedTargetId = issue.id;
-      }
-      let parsedAnchor: Parameters<typeof listComments>[3];
+      let parsedAnchor: CommentAnchor | undefined;
       if (anchor) {
         if (anchor.file_path !== undefined && anchor.line_number !== undefined) {
           parsedAnchor = { filePath: anchor.file_path, lineNumber: anchor.line_number };
@@ -113,7 +114,8 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
           parsedAnchor = { startOffset: anchor.start_offset, endOffset: anchor.end_offset };
         }
       }
-      const comments = await listComments(db, target_type, resolvedTargetId, parsedAnchor);
+      const comments = await artifacts.listComments(commentTarget(target_type, target_id), parsedAnchor);
+      if (!comments) throw new Error(`Comment target not found: ${target_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(comments) }] };
     }
   );
@@ -135,29 +137,16 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         .optional(),
     },
     async ({ target_type, target_id, body, anchor }, extra) => {
-      let resolvedTargetId = target_id;
-      if (target_type === 'issue') {
-        const issue = await resolveIssue(db, projectId, target_id);
-        if (!issue) throw new Error(`Issue not found: ${target_id}`);
-        resolvedTargetId = issue.id;
-      }
-      const input: Parameters<typeof addComment>[1] = {
-        targetType: target_type,
-        targetId: resolvedTargetId,
+      const input = {
         body,
         authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
+        anchorFilePath: anchor?.file_path ?? null,
+        anchorStart: anchor?.line_number ?? anchor?.start_offset ?? null,
+        anchorEnd: anchor?.end_offset ?? null,
       };
-      if (anchor) {
-        if (anchor.file_path !== undefined) {
-          input.anchorFilePath = anchor.file_path;
-          input.anchorStart = anchor.line_number ?? null;
-        } else {
-          input.anchorStart = anchor.start_offset ?? null;
-          input.anchorEnd = anchor.end_offset ?? null;
-        }
-      }
-      const comment = await addComment(db, input);
+      const comment = await artifacts.addComment(commentTarget(target_type, target_id), input);
+      if (!comment) throw new Error(`Comment target not found: ${target_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(comment) }] };
     }
   );
@@ -171,13 +160,14 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       issue_id: z.string().optional(),
     },
     async ({ title, content, issue_id }, extra) => {
-      const doc = await createDocument(db, projectId, {
+      const doc = await artifacts.createDocument({
         title,
         content,
         issueId: issue_id ?? null,
         authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       });
+      if (!doc) throw new Error(`Issue not found: ${issue_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
     }
   );
@@ -221,7 +211,8 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     async ({ issue_id }) => {
       const docs = issue_id === undefined
         ? await listDocuments(db, projectId)
-        : await listDocumentsByIssue(db, projectId, issue_id);
+        : await artifacts.listDocumentsByIssue(issue_id);
+      if (!docs) throw new Error(`Issue not found: ${issue_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(docs) }] };
     }
   );
@@ -237,7 +228,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       issue_id: z.string(),
     },
     async ({ title, description, branch, diff_text, issue_id }, extra) => {
-      const diff = await uploadDiff(db, projectId, {
+      const diff = await artifacts.uploadDiff({
         title,
         description,
         branch,
@@ -246,6 +237,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       });
+      if (!diff) throw new Error(`Issue not found: ${issue_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(diff) }] };
     }
   );
@@ -266,7 +258,8 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     'List diff artifacts linked to an issue',
     { issue_id: z.string() },
     async ({ issue_id }) => {
-      const diffs = await listDiffsByIssue(db, projectId, issue_id);
+      const diffs = await artifacts.listDiffsByIssue(issue_id);
+      if (!diffs) throw new Error(`Issue not found: ${issue_id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(diffs) }] };
     }
   );

@@ -3,8 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { getIssue } from '@/lib/issues/issue-service';
-import { addComment, listComments } from '@/lib/comments/comment-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -42,10 +41,8 @@ export async function GET(
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, projectId, id);
-  if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  const comments = await listComments(prisma as any, 'issue', id);
+  const comments = await projectArtifacts(prisma as any, projectId).listComments({ type: 'issue', issueId: id });
+  if (!comments) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comments);
 }
 
@@ -60,21 +57,17 @@ export async function POST(
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, projectId, id);
-  if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
   const body = await request.json().catch(() => null);
   if (!body || typeof body.body !== 'string' || body.body.trim().length === 0) {
     return NextResponse.json({ error: 'body is required' }, { status: 400 });
   }
 
-  const comment = await addComment(prisma as any, {
-    targetType: 'issue',
-    targetId: id,
+  const comment = await projectArtifacts(prisma as any, projectId).addComment({ type: 'issue', issueId: id }, {
     body: body.body.trim(),
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,
   });
 
+  if (!comment) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comment, { status: 201 });
 }

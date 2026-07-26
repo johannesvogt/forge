@@ -104,7 +104,7 @@ export default function DocumentViewerPage() {
     if (!doc) return;
     const currentVersion = versions.find((v) => v.versionNumber === doc.versionNumber);
     if (!currentVersion) return;
-    fetch(`/api/documents/${id}/comments?versionId=${currentVersion.id}`)
+    fetch(`/api/documents/${id}/comments?projectId=${projectId}&versionId=${currentVersion.id}`)
       .then(async (res) => {
         if (!res.ok) return;
         setComments(await res.json());
@@ -177,7 +177,7 @@ export default function DocumentViewerPage() {
     setSubmittingComment(true);
     setCommentError(null);
     try {
-      const res = await fetch(`/api/documents/${id}/comments`, {
+      const res = await fetch(`/api/documents/${id}/comments?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -205,7 +205,7 @@ export default function DocumentViewerPage() {
   }
 
   async function resolveComment(commentId: string) {
-    const res = await fetch(`/api/comments/${commentId}`, {
+    const res = await fetch(`/api/comments/${commentId}?projectId=${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'resolved' }),

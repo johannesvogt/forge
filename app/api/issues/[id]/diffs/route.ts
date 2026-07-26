@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
-import { getIssue } from '@/lib/issues/issue-service';
-import { listDiffsByIssue } from '@/lib/diffs/diff-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -16,9 +15,7 @@ export async function GET(
 
   const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
-  const issue = await getIssue(prisma as any, projectId, id);
-  if (!issue) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  const diffs = await listDiffsByIssue(prisma as any, projectId, id);
+  const diffs = await projectArtifacts(prisma as any, projectId).listDiffsByIssue(id);
+  if (!diffs) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(diffs);
 }

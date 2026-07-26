@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { addComment, listComments, type DiffLineAnchor } from '@/lib/comments/comment-service';
+import type { DiffLineAnchor } from '@/lib/comments/comment-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -31,10 +32,8 @@ export async function GET(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
-
-  const diff = await prisma.diff.findUnique({ where: { id } });
-  if (!diff) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const filePath = request.nextUrl.searchParams.get('filePath');
   const lineNumberParam = request.nextUrl.searchParams.get('lineNumber');
@@ -48,7 +47,11 @@ export async function GET(
     anchor = { filePath, lineNumber };
   }
 
-  const comments = await listComments(prisma as any, 'diff_line', id, anchor);
+  const comments = await projectArtifacts(prisma as any, projectId).listComments(
+    { type: 'diff', diffId: id },
+    anchor
+  );
+  if (!comments) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comments);
 }
 
@@ -59,10 +62,8 @@ export async function POST(
   const author = await resolveAuthor(request);
   if (!author) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
-
-  const diff = await prisma.diff.findUnique({ where: { id } });
-  if (!diff) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body.body !== 'string' || body.body.trim().length === 0) {
@@ -75,9 +76,7 @@ export async function POST(
     return NextResponse.json({ error: 'lineNumber is required' }, { status: 400 });
   }
 
-  const comment = await addComment(prisma as any, {
-    targetType: 'diff_line',
-    targetId: id,
+  const comment = await projectArtifacts(prisma as any, projectId).addComment({ type: 'diff', diffId: id }, {
     body: body.body.trim(),
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,
@@ -85,5 +84,6 @@ export async function POST(
     anchorStart: body.lineNumber,
   });
 
+  if (!comment) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comment, { status: 201 });
 }

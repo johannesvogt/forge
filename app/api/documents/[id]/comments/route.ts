@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/nextauth-config';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
-import { addComment, listComments } from '@/lib/comments/comment-service';
+import { projectArtifacts } from '@/lib/artifacts/project-artifact-service';
 import { prisma } from '@/lib/prisma';
 
 async function resolveAuthor(
@@ -36,9 +36,8 @@ export async function GET(
   const startOffset = request.nextUrl.searchParams.get('anchorStart');
   const endOffset = request.nextUrl.searchParams.get('anchorEnd');
 
-  // targetId is versionId when given, else documentId for all doc comments
-  const targetId = versionId ?? id;
-  const targetType = versionId ? 'document_section' : 'document_section';
+  if (!versionId) return NextResponse.json({ error: 'versionId is required' }, { status: 400 });
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
 
   let anchor: { startOffset: number; endOffset: number } | undefined;
   if (startOffset !== null && endOffset !== null) {
@@ -50,7 +49,11 @@ export async function GET(
     anchor = { startOffset: start, endOffset: end };
   }
 
-  const comments = await listComments(prisma as any, targetType, targetId, anchor);
+  const comments = await projectArtifacts(prisma as any, projectId).listComments(
+    { type: 'documentVersion', documentId: id, versionId },
+    anchor
+  );
+  if (!comments) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comments);
 }
 
@@ -61,6 +64,7 @@ export async function POST(
   const author = await resolveAuthor(request);
   if (!author) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const projectId = request.nextUrl.searchParams.get('projectId') ?? '';
   const { id } = await params;
   const body = await request.json().catch(() => null);
   if (!body || typeof body.body !== 'string' || body.body.trim().length === 0) {
@@ -72,19 +76,17 @@ export async function POST(
   const anchorStart = typeof body.anchorStart === 'number' ? body.anchorStart : null;
   const anchorEnd = typeof body.anchorEnd === 'number' ? body.anchorEnd : null;
 
-  // Verify document exists
-  const doc = await prisma.document.findUnique({ where: { id } });
-  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  const comment = await addComment(prisma as any, {
-    targetType: 'document_section',
-    targetId: body.versionId,
+  const comment = await projectArtifacts(prisma as any, projectId).addComment(
+    { type: 'documentVersion', documentId: id, versionId: body.versionId },
+    {
     body: body.body.trim(),
     authorUserId: author.authorUserId,
     authorLabel: author.authorLabel,
     anchorStart,
-    anchorEnd,
-  });
+      anchorEnd,
+    }
+  );
 
+  if (!comment) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(comment, { status: 201 });
 }

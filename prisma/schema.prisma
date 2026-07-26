@@ -63,8 +63,10 @@ model Issue {
   updatedAt       DateTime          @updatedAt
   projectId       String
   project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dependencies    IssueDependency[] @relation("IssueDependencies")
-  blockers        IssueDependency[] @relation("IssueBlockers")
+  dependencies    IssueDependency[]    @relation("IssueDependencies")
+  blockers        IssueDependency[]    @relation("IssueBlockers")
+  documentLinks   DocumentIssueLink[]
+  diffs           Diff[]
 
   @@unique([projectId, key])
 }
@@ -121,6 +123,7 @@ model DocumentIssueLink {
   documentId String
   issueId    String
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  issue      Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@id([documentId, issueId])
 }
@@ -137,6 +140,7 @@ model Diff {
   createdAt    DateTime @default(now())
   projectId    String
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issue        Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
 }
 
 model Skill {

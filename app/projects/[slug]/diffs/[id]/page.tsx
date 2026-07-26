@@ -64,7 +64,7 @@ export default function DiffViewerPage() {
 
   const fetchComments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/diffs/${id}/comments`);
+      const res = await fetch(`/api/diffs/${id}/comments?projectId=${projectId}`);
       if (!res.ok) return;
       const comments: LineComment[] = await res.json();
       const grouped: CommentsByLine = {};
@@ -159,7 +159,7 @@ export default function DiffViewerPage() {
     if (!commentForm || !commentBody.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/diffs/${id}/comments`, {
+      const res = await fetch(`/api/diffs/${id}/comments?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,7 +184,7 @@ export default function DiffViewerPage() {
   };
 
   const resolveComment = async (commentId: string, filePath: string, lineNumber: number) => {
-    const res = await fetch(`/api/comments/${commentId}`, {
+    const res = await fetch(`/api/comments/${commentId}?projectId=${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'resolved' }),
