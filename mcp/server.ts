@@ -6,11 +6,14 @@ import { createDocument, getDocument, getDocumentAtVersion, updateDocument, list
 import { uploadDiff, getDiff, listDiffsByIssue } from '../lib/diffs/diff-service.ts';
 import { listSkills, getSkillWithFiles } from '../lib/skills/skill-service.ts';
 import { getProjectContext, updateProjectContext } from '../lib/context/context-service.ts';
+import { agentLabelFromHeaders } from '../lib/auth/agent-identity.ts';
 import type { Column } from '../lib/issues/state-machine.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createMcpServer(db: any, agentLabel: string, projectId: string): McpServer {
   const server = new McpServer({ name: 'forge-mcp', version: '1.0.0' });
+  const agentLabelForRequest = (extra?: { requestInfo?: { headers?: Record<string, string | string[] | undefined> } }) =>
+    agentLabelFromHeaders(extra?.requestInfo?.headers, agentLabel);
 
   server.tool(
     'list_issues',
@@ -131,7 +134,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         })
         .optional(),
     },
-    async ({ target_type, target_id, body, anchor }) => {
+    async ({ target_type, target_id, body, anchor }, extra) => {
       let resolvedTargetId = target_id;
       if (target_type === 'issue') {
         const issue = await resolveIssue(db, projectId, target_id);
@@ -142,7 +145,7 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
         targetType: target_type,
         targetId: resolvedTargetId,
         body,
-        authorLabel: agentLabel,
+        authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       };
       if (anchor) {
@@ -167,12 +170,12 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       content: z.string(),
       issue_id: z.string().optional(),
     },
-    async ({ title, content, issue_id }) => {
+    async ({ title, content, issue_id }, extra) => {
       const doc = await createDocument(db, projectId, {
         title,
         content,
         issueId: issue_id ?? null,
-        authorLabel: agentLabel,
+        authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       });
       return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
@@ -202,8 +205,8 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       id: z.string(),
       content: z.string(),
     },
-    async ({ id, content }) => {
-      const doc = await updateDocument(db, projectId, id, { content, authorLabel: agentLabel, authorUserId: null });
+    async ({ id, content }, extra) => {
+      const doc = await updateDocument(db, projectId, id, { content, authorLabel: agentLabelForRequest(extra), authorUserId: null });
       if (!doc) throw new Error(`Document not found: ${id}`);
       return { content: [{ type: 'text' as const, text: JSON.stringify(doc) }] };
     }
@@ -233,14 +236,14 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
       diff_text: z.string(),
       issue_id: z.string(),
     },
-    async ({ title, description, branch, diff_text, issue_id }) => {
+    async ({ title, description, branch, diff_text, issue_id }, extra) => {
       const diff = await uploadDiff(db, projectId, {
         title,
         description,
         branch,
         diffText: diff_text,
         issueId: issue_id,
-        authorLabel: agentLabel,
+        authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       });
       return { content: [{ type: 'text' as const, text: JSON.stringify(diff) }] };
@@ -300,11 +303,11 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     'assign_issue',
     'Claim an issue for this agent. Fails if another agent holds a lock younger than 4 hours. Accepts key (e.g. FORG-1) or internal id.',
     { id: z.string().describe('Issue key (e.g. FORG-1) or internal id') },
-    async ({ id }) => {
+    async ({ id }, extra) => {
       const issue = await resolveIssue(db, projectId, id);
       if (!issue) throw new Error(`Issue not found: ${id}`);
       if (issue.column === 'BACKLOG') throw new Error('Agents cannot claim BACKLOG issues. A human must promote the issue to TODO first.');
-      const assigned = await assignIssue(db, projectId, issue.id, agentLabel);
+      const assigned = await assignIssue(db, projectId, issue.id, agentLabelForRequest(extra));
       return { content: [{ type: 'text' as const, text: JSON.stringify(assigned) }] };
     }
   );
@@ -374,10 +377,10 @@ export function createMcpServer(db: any, agentLabel: string, projectId: string):
     'update_project_context',
     'Replace the project context with new content. Returns a warning if content exceeds 1000 tokens, but still saves.',
     { content: z.string() },
-    async ({ content }) => {
+    async ({ content }, extra) => {
       const { context, warning } = await updateProjectContext(db, projectId, {
         content,
-        authorLabel: agentLabel,
+        authorLabel: agentLabelForRequest(extra),
         authorUserId: null,
       });
       const result: { id: string; authorLabel: string; updatedAt: Date; warning?: string } = {

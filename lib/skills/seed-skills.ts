@@ -121,6 +121,23 @@ Issues that are not implementation work (e.g. planning, writing a PRD, architect
 `,
   },
   {
+    name: 'new-feature',
+    description: 'Discover a new feature through a detailed, context-aware interview, then turn the resulting shared understanding into issues on the Forge board.',
+    prompt: `# new-feature
+
+Guide the user from an initial feature idea to a set of actionable issues on the Forge board.
+
+## Steps
+
+1. Ask the user what the new feature is. Ask only this question first and wait for their response before continuing.
+2. Invoke the \`grill-with-docs\` skill with the user's answer as the plan to explore. Follow that skill through its complete interview, including loading project context and ADRs, asking one question at a time, resolving terminology, and recording decisions where appropriate.
+3. Continue the interview until the feature has a shared, sufficiently detailed understanding and the user confirms that the grilling session is complete.
+4. Invoke the \`to-issues\` skill using the feature definition and decisions established during the conversation. Follow that skill completely to create the implementation issues and their dependencies on the Forge board.
+
+Do not create issues before the grilling session is complete. Preserve the full conversation context when handing off between skills so that the issue breakdown reflects all resolved decisions, constraints, edge cases, and explicitly out-of-scope work.
+`,
+  },
+  {
     name: 'review-implementation-issue',
     description: 'Review an implementation issue in NEEDS_AGENT_REVIEW: verify code, tests, type checks, and feature behaviour. Pass, flag minor issues as follow-up refactoring, or return to TODO with blocking feedback.',
     prompt: `# review-implementation-issue

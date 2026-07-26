@@ -1,16 +1,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../lib/test-support/db.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from './server.ts';
 import { findActiveApiKey } from '../lib/auth/api-key-service.ts';
 import { hashApiKey } from '../lib/auth/api-keys.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_PREFIX = `mcp-test-${crypto.randomUUID().slice(0, 8)}`;
 const AGENT_LABEL = `${TEST_PREFIX}-agent`;
@@ -20,8 +18,17 @@ const TEST_DOC_ISSUE_ID = `${TEST_PREFIX}-doc-issue`;
 let testUserId: string;
 let testProjectId: string;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
+    project: {
+      update: async ({ where }: { where: { id: string } }) => {
+        const r = await pool.query(
+          `UPDATE "Project" SET "issueCounter" = "issueCounter" + 1 WHERE id = $1 RETURNING "issueCounter", name`,
+          [where.id]
+        );
+        return r.rows[0];
+      },
+    },
     document: {
       create: async ({ data }: { data: { title: string; projectId: string } }) => {
         const id = crypto.randomUUID();
@@ -137,12 +144,12 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
       },
     },
     issue: {
-      create: async ({ data }: { data: { title: string; description?: string; column?: string; projectId: string } }) => {
+      create: async ({ data }: { data: { key: string; title: string; description?: string; column?: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Issue" (id, title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING *`,
-          [id, data.title, data.description ?? '', data.column ?? 'BACKLOG', data.projectId, now]
+          `INSERT INTO "Issue" (id, "key", title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *`,
+          [id, data.key, data.title, data.description ?? '', data.column ?? 'BACKLOG', data.projectId, now]
         );
         return r.rows[0];
       },
@@ -161,9 +168,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         const r = await pool.query(`SELECT * FROM "Issue" ${whereClause} ORDER BY "createdAt" ASC`, params);
         return r.rows;
       },
-      findUnique: async ({ where }: { where: { id: string; projectId?: string } }) => {
-        let q = `SELECT * FROM "Issue" WHERE id = $1`;
-        const params: unknown[] = [where.id];
+      findUnique: async ({ where }: { where: { id?: string; key?: string; projectId?: string } }) => {
+        const field = where.key !== undefined ? 'key' : 'id';
+        const value = where.key ?? where.id;
+        let q = `SELECT * FROM "Issue" WHERE "${field}" = $1`;
+        const params: unknown[] = [value];
         if (where.projectId) {
           params.push(where.projectId);
           q += ` AND "projectId" = $${params.length}`;
@@ -184,6 +193,14 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         q += ' RETURNING *';
         const r = await pool.query(q, params);
         return r.rows[0];
+      },
+    },
+    issueDependency: {
+      findMany: async ({ where }: { where: { dependentId?: string; dependsOnId?: string } }) => {
+        const field = where.dependentId !== undefined ? 'dependentId' : 'dependsOnId';
+        const value = where.dependentId ?? where.dependsOnId;
+        const r = await pool.query(`SELECT * FROM "IssueDependency" WHERE "${field}" = $1`, [value]);
+        return r.rows;
       },
     },
     comment: {
@@ -398,7 +415,7 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 let client: Client;
 
@@ -412,7 +429,7 @@ async function makeClient(): Promise<Client> {
 }
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
 
   const userId = crypto.randomUUID();
   await pool.query(
@@ -452,8 +469,8 @@ describe('list_issues', () => {
 
   it('filters by column', async () => {
     await pool.query(
-      `INSERT INTO "Issue" (id, title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,'',$3,$4,NOW(),NOW())`,
-      [crypto.randomUUID(), `${TEST_PREFIX}-todo-issue`, 'TODO', testProjectId]
+      `INSERT INTO "Issue" (id, "key", title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,'',$4,$5,NOW(),NOW())`,
+      [crypto.randomUUID(), `MCPT-${Date.now()}`, `${TEST_PREFIX}-todo-issue`, 'TODO', testProjectId]
     );
     const result = await client.callTool({ name: 'list_issues', arguments: { column: 'TODO' } });
     const issues = parseText(result) as Array<{ column: string }>;
@@ -524,15 +541,15 @@ describe('move_issue', () => {
   it('moves issue to a valid next column', async () => {
     const created = await client.callTool({
       name: 'create_issue',
-      arguments: { title: `${TEST_PREFIX}-move-1` },
+      arguments: { title: `${TEST_PREFIX}-move-1`, column: 'TODO' },
     });
     const { id } = parseText(created) as { id: string };
     const result = await client.callTool({
       name: 'move_issue',
-      arguments: { id, column: 'TODO' },
+      arguments: { id, column: 'IN_PROGRESS' },
     });
     const issue = parseText(result) as { column: string };
-    assert.equal(issue.column, 'TODO');
+    assert.equal(issue.column, 'IN_PROGRESS');
   });
 
   it('returns isError for invalid transition', async () => {
@@ -592,13 +609,12 @@ describe('list_comments', () => {
     assert.equal(comments[1].body, 'Second comment');
   });
 
-  it('returns empty array for target with no comments', async () => {
+  it('returns isError for an unknown issue', async () => {
     const result = await client.callTool({
       name: 'list_comments',
       arguments: { target_type: 'issue', target_id: `${TEST_PREFIX}-nonexistent` },
     });
-    const comments = parseText(result);
-    assert.deepEqual(comments, []);
+    assert.equal((result as { isError?: boolean }).isError, true);
   });
 });
 

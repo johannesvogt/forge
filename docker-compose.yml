@@ -1,3 +1,5 @@
+# Optional: Forge runs on SQLite by default and needs no server.
+# Use this only when running on Postgres — see "Running on Postgres" in the README.
 services:
   db:
     image: postgres:16

@@ -1,8 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 import {
   createIssue,
   listIssues,
@@ -11,23 +10,31 @@ import {
   moveIssue,
 } from './issue-service.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_RUN = crypto.randomUUID().slice(0, 8);
 let testUserId: string;
 let projectAId: string;
 let projectBId: string;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
+    project: {
+      update: async ({ where }: { where: { id: string } }) => {
+        const r = await pool.query(
+          `UPDATE "Project" SET "issueCounter" = "issueCounter" + 1 WHERE id = $1 RETURNING "issueCounter", name`,
+          [where.id]
+        );
+        return r.rows[0];
+      },
+    },
     issue: {
-      create: async ({ data }: { data: { title: string; description?: string; column?: string; projectId: string } }) => {
+      create: async ({ data }: { data: { key: string; title: string; description?: string; column?: string; projectId: string } }) => {
         const id = crypto.randomUUID();
         const now = new Date();
         const r = await pool.query(
-          `INSERT INTO "Issue" (id, title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING *`,
-          [id, data.title, data.description ?? '', data.column ?? 'BACKLOG', data.projectId, now]
+          `INSERT INTO "Issue" (id, "key", title, description, "column", "projectId", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *`,
+          [id, data.key, data.title, data.description ?? '', data.column ?? 'BACKLOG', data.projectId, now]
         );
         return r.rows[0];
       },
@@ -46,9 +53,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         const r = await pool.query(`SELECT * FROM "Issue" ${whereClause} ORDER BY "createdAt" ASC`, params);
         return r.rows;
       },
-      findUnique: async ({ where }: { where: { id: string; projectId?: string } }) => {
-        let q = `SELECT * FROM "Issue" WHERE id = $1`;
-        const params: unknown[] = [where.id];
+      findUnique: async ({ where }: { where: { id?: string; key?: string; projectId?: string } }) => {
+        const field = where.key !== undefined ? 'key' : 'id';
+        const value = where.key ?? where.id;
+        let q = `SELECT * FROM "Issue" WHERE "${field}" = $1`;
+        const params: unknown[] = [value];
         if (where.projectId) {
           params.push(where.projectId);
           q += ` AND "projectId" = $${params.length}`;
@@ -76,14 +85,22 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         }
       },
     },
+    issueDependency: {
+      findMany: async ({ where }: { where: { dependentId?: string; dependsOnId?: string } }) => {
+        const field = where.dependentId !== undefined ? 'dependentId' : 'dependsOnId';
+        const value = where.dependentId ?? where.dependsOnId;
+        const r = await pool.query(`SELECT * FROM "IssueDependency" WHERE "${field}" = $1`, [value]);
+        return r.rows;
+      },
+    },
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
   const userId = crypto.randomUUID();
   await pool.query(
     `INSERT INTO "User" (id, email, "passwordHash", "createdAt", "updatedAt") VALUES ($1,$2,$3,now(),now())`,

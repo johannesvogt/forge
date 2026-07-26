@@ -1,8 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 import {
   createProject,
   listProjects,
@@ -12,13 +11,12 @@ import {
   type Project,
 } from './project-service.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_RUN = crypto.randomUUID().slice(0, 8);
 let testUserId: string;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     project: {
       create: async ({ data }: { data: { name: string; slug: string; createdByUserId: string } }): Promise<Project> => {
@@ -72,6 +70,17 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
         return r.rows[0];
       },
     },
+    skillFile: {
+      create: async ({ data }: { data: { skillId: string; name: string; content: string } }): Promise<{ id: string }> => {
+        const id = crypto.randomUUID();
+        const now = new Date();
+        const r = await pool.query(
+          `INSERT INTO "SkillFile" (id, "skillId", name, content, "createdAt") VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+          [id, data.skillId, data.name, data.content, now]
+        );
+        return r.rows[0];
+      },
+    },
     projectContext: {
       create: async ({ data }: { data: { projectId: string; content: string; authorLabel: string } }): Promise<{ id: string }> => {
         const id = crypto.randomUUID();
@@ -87,11 +96,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
   // Create a test user for FK
   const userId = crypto.randomUUID();
   await pool.query(

@@ -3,14 +3,13 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { createUser } from './users.ts';
 import { createApiKey, listApiKeys, revokeApiKey, findActiveApiKey } from './api-key-service.ts';
+import { agentLabelFromEnv, agentLabelFromHeaders } from './agent-identity.ts';
 
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     user: {
       create: async ({ data }: { data: { email: string; passwordHash: string } }) => {
@@ -71,14 +70,14 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 let testUserId: string;
 let testProjectId: string;
 let testProjectBId: string;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
   const user = await createUser(db as any, `test-apikey-${Date.now()}@example.com`, 'password123');
   testUserId = user.id;
 
@@ -152,6 +151,20 @@ describe('revokeApiKey', () => {
       () => revokeApiKey(db as any, record.id, 'wrong-user-id'),
       /not found/i
     );
+  });
+});
+
+describe('agent identity labels', () => {
+  it('uses agent-key header before falling back to the API key label', () => {
+    assert.equal(agentLabelFromHeaders({ 'agent-key': 'pi-gpt-5-5' }, 'api-key-label'), 'pi-gpt-5-5');
+  });
+
+  it('sanitizes displayed agent identity labels', () => {
+    assert.equal(agentLabelFromHeaders({ 'x-agent-key': ' pi gpt/5 #5 ' }, 'api-key-label'), 'pi-gpt/5-5');
+  });
+
+  it('uses MCP_AGENT_KEY for stdio MCP identity', () => {
+    assert.equal(agentLabelFromEnv({ MCP_AGENT_KEY: 'pi-gpt-5-5' }, 'api-key-label'), 'pi-gpt-5-5');
   });
 });
 

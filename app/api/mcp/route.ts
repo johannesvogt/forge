@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { extractBearer } from '@/lib/auth/bearer';
 import { findActiveApiKey } from '@/lib/auth/api-key-service';
+import { agentLabelFromHeaders } from '@/lib/auth/agent-identity';
 import { prisma } from '@/lib/prisma';
 import { createMcpServer } from '@/mcp/server';
 
@@ -28,7 +29,7 @@ async function handleMcpRequest(request: NextRequest): Promise<Response> {
   if (result.error) return result.error;
   const { agent } = result;
 
-  const server = createMcpServer(prisma, agent.label, agent.projectId!);
+  const server = createMcpServer(prisma, agentLabelFromHeaders(Object.fromEntries(request.headers), agent.label), agent.projectId!);
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
   return transport.handleRequest(request);

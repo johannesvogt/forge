@@ -10,19 +10,24 @@ AI-first project management system. Agents do the primary work via MCP; humans r
 
 ### Step 1 — Start Forge locally
 
-**Prerequisites:** Node.js 22+, Docker (for the database)
+**Prerequisites:** Node.js 22+ (Docker only if you want to run on Postgres)
 
-#### 1a — Start the database
+#### 1a — Configure the database
+
+Forge runs on SQLite by default, so there is nothing to install or start. Copy the
+example environment file:
 
 ```bash
-docker compose up -d
+cp .env.example .env.local
 ```
 
-This starts PostgreSQL on port **5433**. Set `DATABASE_URL` in `.env.local`:
+That sets:
 
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/forge
+DATABASE_URL=file:./prisma/dev.db
 ```
+
+Prefer Postgres? See [Running on Postgres](#running-on-postgres) below.
 
 #### 1b — Install, migrate, and seed
 
@@ -86,7 +91,8 @@ Create `.mcp.json` at the root of the project where the agent will work:
       "type": "http",
       "url": "http://${FORGE_HOST:-host.docker.internal}:3000/api/mcp",
       "headers": {
-        "Authorization": "Bearer <your-api-key>"
+        "Authorization": "Bearer <your-api-key>",
+        "agent-key": "pi-gpt-5-5"
       }
     }
   }
@@ -147,7 +153,7 @@ Add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.forge]
 url = "http://host.docker.internal:3000/api/mcp"
-http_headers = { "Authorization" = "Bearer <your-api-key>" }
+http_headers = { "Authorization" = "Bearer <your-api-key>", "agent-key" = "pi-gpt-5-5" }
 enabled = true
 ```
 
@@ -155,7 +161,7 @@ enabled = true
 
 ---
 
-Each API key is scoped to one project. The agent can only read and write issues, documents, and diffs within that project.
+Each API key is scoped to one project. The agent can only read and write issues, documents, and diffs within that project. Set the optional `agent-key` header to display a per-agent identity (for example `pi-gpt-5-5`) on assignments and agent-authored artifacts; if omitted, Forge falls back to the API key label.
 
 ---
 
@@ -271,3 +277,63 @@ Without a filter flag, each iteration prioritizes **Needs Agent Review**, then *
 Use `--model <model>` to override the agent's configured model for every iteration. For Claude Code, the value is passed to its top-level `--model` option and may be an alias such as `sonnet`, `opus`, `haiku`, or `fable`, or a full model name. For Codex, it is passed to `codex exec --model`. Omitting the option preserves the tool's configured default.
 
 An implementation pass moves completed work to **Needs Agent Review**. A review pass moves it to **Done** or sends it back with feedback. The loop exits early when no eligible issues remain for the selected mode.
+
+---
+
+## Running on Postgres
+
+SQLite is the default and needs no setup. Postgres is fully supported for deployments
+that want it.
+
+`DATABASE_URL` decides which database is used — the driver adapter and the migrations
+directory both follow it. The one thing that cannot follow it automatically is the
+`provider` in `prisma/schema.prisma`: Prisma requires a static value there and bakes the
+SQL dialect into the generated client. `npm run db:use` rewrites that line to match
+`DATABASE_URL` and regenerates the client.
+
+To switch to Postgres:
+
+```bash
+docker compose up -d                  # starts PostgreSQL on port 5433
+# set DATABASE_URL in .env.local:
+#   DATABASE_URL="postgresql://postgres:postgres@localhost:5433/forge"
+npm run db:use                        # syncs schema.prisma + regenerates the client
+npx prisma migrate deploy
+npx prisma db seed
+```
+
+To switch back, point `DATABASE_URL` at `file:./prisma/dev.db` and run `npm run db:use`
+again. The two databases are independent — switching does not copy data between them.
+
+### Moving existing data from Postgres to SQLite
+
+If you already have a Postgres database and want its contents in SQLite, point
+`DATABASE_URL` at the SQLite file, create the schema, then run the copy:
+
+```bash
+npm run db:use                        # with DATABASE_URL=file:./prisma/dev.db
+npx prisma migrate deploy             # creates the empty SQLite schema
+npm run db:copy-from-postgres -- --from "postgresql://postgres:postgres@localhost:5433/forge"
+```
+
+The copy reads every table in foreign-key order and prints a row count per table.
+It refuses to run unless the target is empty — pass `--replace` to overwrite an
+existing SQLite database. `--to` defaults to `DATABASE_URL`. Nothing is written to
+the Postgres side, so it is safe to re-run.
+
+Note that this copies rows, not migration history: apply the schema with
+`prisma migrate deploy` first, as above.
+
+Migration history is kept per provider, because Postgres DDL cannot be replayed on SQLite:
+
+| Provider | Migrations directory        |
+|----------|-----------------------------|
+| SQLite   | `prisma/migrations-sqlite`  |
+| Postgres | `prisma/migrations-postgres` |
+
+When you change `prisma/schema.prisma`, generate the migration once per provider — switch
+with `npm run db:use` and run `npx prisma migrate dev` against each database so both
+histories stay in step.
+
+The test suite is independent of `DATABASE_URL`: each test file creates its own temporary
+SQLite database (`lib/test-support/db.ts`), so `npm test` never needs a running server.

@@ -11,14 +11,23 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test 'lib/**/*.test.ts' 'mcp/**/*.test.ts'",
+    "db:use": "node --experimental-strip-types scripts/db-use.ts",
+    "db:copy-from-postgres": "node --experimental-strip-types scripts/copy-postgres-to-sqlite.ts",
+    "test": "tsx --test 'app/**/*.test.ts' 'lib/**/*.test.ts' 'mcp/**/*.test.ts'",
     "type-check": "tsc --noEmit"
+  },
+  "overrides": {
+    "@prisma/adapter-better-sqlite3": {
+      "better-sqlite3": "$better-sqlite3"
+    }
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.1",
     "diff2html": "^3.4.56",
     "next": "^16.2.9",
     "next-auth": "^4.24.14",
@@ -29,6 +38,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.0.0",
@@ -40,6 +50,7 @@
     "postcss": "^8.4.0",
     "prisma": "^7.8.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.0.0"
   }
 }

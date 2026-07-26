@@ -1,8 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 import {
   addComment,
   listComments,
@@ -11,13 +10,12 @@ import {
   type DiffLineAnchor,
 } from './comment-service.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_ISSUE_ID = `test-comment-issue-${crypto.randomUUID()}`;
 const TEST_ISSUE_ID_2 = `test-comment-issue-${crypto.randomUUID()}`;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     comment: {
       create: async ({ data }: {
@@ -94,11 +92,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 
 before(() => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
 });
 
 after(async () => {

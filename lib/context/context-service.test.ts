@@ -1,19 +1,17 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 import { getProjectContext, updateProjectContext, type ProjectContext } from './context-service.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_RUN = crypto.randomUUID().slice(0, 8);
 let testUserId: string;
 let projectAId: string;
 let projectBId: string;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     projectContext: {
       upsert: async ({
@@ -47,11 +45,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
   const userId = crypto.randomUUID();
   await pool.query(
     `INSERT INTO "User" (id, email, "passwordHash", "createdAt", "updatedAt") VALUES ($1,$2,$3,now(),now())`,

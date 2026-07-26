@@ -1,6 +1,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { PrismaClient } from '@prisma/client';
 import { findActiveApiKey } from '../lib/auth/api-key-service.ts';
+import { agentLabelFromEnv } from '../lib/auth/agent-identity.ts';
 import { createMcpServer } from './server.ts';
 
 const apiKey = process.env['MCP_API_KEY'];
@@ -24,6 +25,6 @@ if (!agent.projectId) {
   process.exit(1);
 }
 
-const server = createMcpServer(prisma, agent.label, agent.projectId);
+const server = createMcpServer(prisma, agentLabelFromEnv(process.env, agent.label), agent.projectId);
 const transport = new StdioServerTransport();
 await server.connect(transport);

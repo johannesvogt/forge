@@ -61,7 +61,7 @@ export async function createProject(db: Db, input: CreateInput): Promise<Project
       data: { name: input.name, slug, createdByUserId: input.createdByUserId },
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
     if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('23505')) {
       throw new SlugConflictError(slug);
     }

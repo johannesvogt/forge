@@ -4,14 +4,12 @@ import crypto from 'node:crypto';
 import { createUser, findUserByEmail, validateUserCredentials } from './users.ts';
 
 // pg-backed test double that matches the Prisma API subset used by users.ts
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 // Minimal Prisma-compatible db client backed by pg
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     user: {
       create: async ({ data }: { data: { email: string; passwordHash: string } }) => {
@@ -38,12 +36,12 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 const TEST_EMAIL = `test-auth-${Date.now()}@example.com`;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
 });
 
 after(async () => {

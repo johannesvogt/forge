@@ -24,4 +24,4 @@ SET "issueCounter" = (SELECT COUNT(*) FROM "Issue" WHERE "projectId" = p.id);
 
 -- Now enforce NOT NULL and UNIQUE
 ALTER TABLE "Issue" ALTER COLUMN "key" SET NOT NULL;
-CREATE UNIQUE INDEX "Issue_key_key" ON "Issue"("key");
+CREATE UNIQUE INDEX "Issue_projectId_key_key" ON "Issue"("projectId", "key");

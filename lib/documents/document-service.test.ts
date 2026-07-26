@@ -1,8 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { createTestPool, type TestPool } from '../test-support/db.ts';
 import {
   createDocument,
   getDocument,
@@ -15,8 +14,7 @@ import {
   type Document,
 } from './document-service.ts';
 
-const DB_URL = process.env['DATABASE_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/forge';
-const pool = new Pool({ connectionString: DB_URL });
+const pool = createTestPool();
 
 const TEST_RUN = crypto.randomUUID().slice(0, 8);
 let testUserId: string;
@@ -26,7 +24,7 @@ let projectBId: string;
 const TEST_ISSUE_ID = `test-issue-${crypto.randomUUID()}`;
 const TEST_ISSUE_ID_2 = `test-issue-${crypto.randomUUID()}`;
 
-function makePgClient(pool: InstanceType<typeof Pool>) {
+function makeDbClient(pool: TestPool) {
   return {
     document: {
       create: async ({ data }: { data: { title: string; projectId: string } }) => {
@@ -145,11 +143,11 @@ function makePgClient(pool: InstanceType<typeof Pool>) {
   };
 }
 
-type DbClient = ReturnType<typeof makePgClient>;
+type DbClient = ReturnType<typeof makeDbClient>;
 let db: DbClient;
 
 before(async () => {
-  db = makePgClient(pool);
+  db = makeDbClient(pool);
   const userId = crypto.randomUUID();
   await pool.query(
     `INSERT INTO "User" (id, email, "passwordHash", "createdAt", "updatedAt") VALUES ($1,$2,$3,now(),now())`,
