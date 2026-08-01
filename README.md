@@ -70,7 +70,7 @@ Open `http://localhost:3000`, create a new project for the codebase you want to 
 
 ### Step 3 — Connect an agent
 
-Pick Claude Code or Codex. Both connect via HTTP MCP with a project-scoped API key.
+Pick Claude Code, Pi, or Codex. All connect via HTTP MCP with a project-scoped API key.
 
 #### Create an API key
 
@@ -146,7 +146,18 @@ Can you connect to the Forge MCP server and list the available tools?
 
 Claude should respond with the list of Forge tools. Restart Claude Code after editing settings — MCP servers load at startup.
 
-#### Option B: Codex
+#### Option B: Pi
+
+Pi uses the same MCP configuration as Claude Code, but reads it from `.pi/mcp.json`. After creating the `.mcp.json` shown in Option A, copy it into the `.pi` directory:
+
+```bash
+mkdir -p .pi
+cp .mcp.json .pi/mcp.json
+```
+
+Restart Pi after copying or editing the configuration so it reloads the MCP server.
+
+#### Option C: Codex
 
 Add to `~/.codex/config.toml`:
 
