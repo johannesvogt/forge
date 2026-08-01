@@ -165,7 +165,7 @@ Each API key is scoped to one project. The agent can only read and write issues,
 
 ---
 
-#### Load the Forge Project Context at every agent startup
+#### Load the Forge Project Context once at the beginning of each agent session
 
 The Forge **Project Context** is the canonical glossary and project orientation stored in Forge. Keep it in Forge and load it through MCP at the beginning of every agent session so the agent does not work from a stale local copy.
 
@@ -174,7 +174,7 @@ Codex reads `AGENTS.md` from the repository root before it starts work. Create `
 ```markdown
 # Forge startup
 
-Before doing any work or answering the user's request:
+Once, at the beginning of each new user session, complete this startup routine before doing any other work. Do not repeat it for subsequent user requests in the same session.
 
 1. Call the Forge MCP tool `get_project_context` and treat the returned Project Context as the canonical source for domain language and project orientation.
 2. Call the Forge MCP tool `list_skills` to discover the workflows available for this project.
@@ -197,7 +197,7 @@ your-project/
 └── ...
 ```
 
-Launch Claude Code or Codex from this project directory. Both tools load their project instruction files once at the start of each new session; the instruction then causes the agent to fetch the current Project Context from Forge. Start a new session after changing either instruction file.
+Launch Claude Code or Codex from this project directory. Both tools load their project instruction files at the start of each new session; the instruction then causes the agent to fetch the current Project Context from Forge exactly once for that session, not once per user request. Start a new session after changing either instruction file.
 
 To verify the setup, start each agent and ask it to state which project instructions it loaded and summarize the Forge Project Context. Confirm that it calls `get_project_context` rather than reading a local `CONTEXT.md`.
 
