@@ -155,6 +155,14 @@ mkdir -p .pi
 cp .mcp.json .pi/mcp.json
 ```
 
+Then edit `.pi/mcp.json` and set the Forge server URL to a literal `localhost` hostname:
+
+```json
+"url": "http://localhost:3000/api/mcp"
+```
+
+Pi's MCP extension does not resolve variables such as `${FORGE_HOST:-host.docker.internal}`, so the URL from `.mcp.json` cannot be used unchanged.
+
 Restart Pi after copying or editing the configuration so it reloads the MCP server.
 
 #### Option C: Codex
